@@ -19,6 +19,12 @@ sudo apt install -y git python3.7 python3.7-venv python3.7-dev redis-server libp
 # If you don't have the Postgres database server installed, then you should install it
 # (you can also set it up on another host if you know what you're doing)
 apt install -y postgresql
+
+# Install rabbitmq-server
+sudo apt -y install rabbitmq-server
+
+# Install pip3
+sudo apt install python3-pip
  
 # Install pipenv if you don't already have it
 sudo pip3 install pipenv
@@ -34,7 +40,7 @@ pipenv install
 
 **Set up database**
 
-To protect against timezone issues, set your PostgreSQL timezone to UTC in `postgresql.conf`
+To protect against timezone issues, set your PostgreSQL timezone to UTC in `postgresql.conf` located in /etc/postgresql/<version>/main/.
 
 ```
 timezone = 'UTC'
@@ -68,13 +74,13 @@ $ psql
 
 ```
 
-**Configure your .env file**
+**Configure your .env file in ~/EOSHistory**
 
 ```
 # Name of the PostgreSQL database
 DB_NAME=eoshistory
 DB_USER=eoshistory
-DB_PASS=MySecurePostgresPass
+DB_PASS=MySecurePostgresPass **** <--- Replace with the password created above ****
 
 # Default is relative - meaning EOS_START_BLOCK becomes "start from this many blocks behind head"
 # You can change this to 'exact', which changes EOS_START_BLOCK to be "start from this exact block number"
