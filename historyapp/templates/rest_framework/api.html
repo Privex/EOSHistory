@@ -1,0 +1,37 @@
+{% extends "rest_framework/base.html" %}
+
+{% block branding %}
+    <a class="navbar-brand" rel="nofollow" href="{% url 'index' %}">
+        Privex EOS History API
+    </a>
+{% endblock %}
+
+{% block content %}
+    {{ block.super }}
+    <div class="text-center" style="margin-top: 10%">
+        <hr/>
+        <p style="color: #a5a5a5; font-size: 14px;">
+            This Web API is running
+            <a href="https://github.com/Privex/EOSHistory" target="_blank">Privex EOS History API</a>,
+            an open source application created by <a href="https://www.privex.io/" target="_blank">Privex Inc.</a>
+            <br/>
+
+            <strong>This is an open source application, which means Privex Inc. may not be operating this service,
+                and is not liable for any damages caused by using it.</strong>
+            <br/>
+            <strong>
+                Privex does however run a public instance of this EOS History application at the following URL:
+                <a href="https://eos-history.privex.io/api/" target="_blank">https://eos-history.privex.io/api/</a>
+            </strong>
+            <br/>
+
+            If you have any problems with this service, please contact the owner of this domain:
+            <strong>{{ request.get_host }}</strong>
+        </p>
+        <a href="https://www.privex.io/" target="_blank">
+            <img src="https://cdn.privex.io/img/promo/developed_by_privex.svg"
+                 alt="Developed by Privex" width="70%"/>
+        </a>
+        <br/><br/>
+    </div>
+{% endblock %}
