@@ -64,7 +64,7 @@ case "$1" in
         ;;
     sync*|block*|cron)
         msg ts bold green "Running sync_blocks management command to import blocks"
-        pipenv run ./manage.py prefixes -q
+        pipenv run ./manage.py sync_blocks
         ;;
     update|upgrade)
         msg ts bold green " >> Updating files from Github"
