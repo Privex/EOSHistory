@@ -8,11 +8,13 @@ from billiard.exceptions import SoftTimeLimitExceeded
 from celery.result import AsyncResult
 from django.conf import settings
 from django.core.management import BaseCommand, CommandParser
+from django.db.models.aggregates import Max
 from lockmgr import lockmgr
 from lockmgr.lockmgr import LockMgr
 from privex.helpers import run_sync
 
 from historyapp.lib import eos
+from historyapp.models import EOSBlock
 from historyapp.tasks import task_import_block
 
 import logging
@@ -54,7 +56,15 @@ class Command(BaseCommand):
         )
         print()
         log.info(' >>> Started SYNC_BLOCKS Django command. Booting up AsyncIO event loop. ')
-        asyncio.run(self.sync_blocks(start_block=options['start_block'], start_type=options['start_type']))
+        last_block, start_type = options['start_block'], options['start_type']
+        if options['start_block'] is None:
+            last_block = settings.EOS_START_BLOCK
+            if EOSBlock.objects.count() > 0:
+                last_block = EOSBlock.objects.aggregate(Max('number'))['number__max']
+                start_type = 'exact'
+                log.info('Found existing blocks. Starting from block %d (changed start_type to exact)', last_block)
+
+        asyncio.run(self.sync_blocks(start_block=last_block, start_type=start_type))
 
     @classmethod
     async def wait_block_task(cls, task_id: str, blocknum: int, timeout=30):
@@ -76,26 +86,17 @@ class Command(BaseCommand):
         except (Exception, BaseException):
             log.exception("ERROR: import_block raised an exception. Attempting to retry")
             try:
-                # if hasattr(t, 'kwargs') and 'block' in t.kwargs:
-                    # blocknum = t.kwargs['block']
                 new_t = task_import_block(blocknum)
                 log.info('Re-queued import_block task for block number: %d - task ID: %s', blocknum, new_t.task_id)
                 cls.tasks[new_t.task_id] = new_t
-                # else:
-                    # log.error('Task object is missing either kwargs attr, or "block" item in kwargs... Cannot retry. '
-                    #           'Failed task ID is: %s', t.task_id)
             except (BaseException, Exception, TypeError, AttributeError) as e:
                 log.exception("Cannot retry import as there was an error while trying to re-queue task: %s", t.task_id)
         return False
 
-    @classmethod
-    async def import_block(cls, block_num):
-        t = task_import_block(block_num)
-        cls.tasks[t.task_id] = t
-        cls.waiters.append(
-            (cls.wait_block_task(task_id=t.task_id, blocknum=block_num), block_num,)
-        )
-        return t.task_id
+    # @classmethod
+    # async def import_block(cls, block_num):
+    #
+    #     return t.task_id
 
     @classmethod
     async def sync_blocks(cls, start_block=None, start_type=None):
@@ -124,16 +125,20 @@ class Command(BaseCommand):
             
             i = 0
             while current_block < head_block:
-                if len(cls.task_creators) >= settings.EOS_SYNC_MAX_QUEUE:
+                if len(cls.tasks) >= settings.EOS_SYNC_MAX_QUEUE:
                     log.info('Sync queue full. %d tasks in queue. Waiting for current tasks to finish.', len(cls.tasks))
-                    await cls.call_creators()
+                    # await cls.call_creators()
                     await cls.call_waiters()
                     continue
                 if i % 20 == 0 or current_block == head_block:
                     log.info('Queued %d blocks out of %d blocks to import. (%d tasks in queue / %d creators in queue)',
                              i, total_blocks, len(cls.tasks), len(cls.task_creators))
                 
-                cls.task_creators.append((cls.import_block(current_block), current_block))
+                t = task_import_block(current_block)
+                cls.tasks[t.task_id] = t
+                cls.waiters.append(
+                    (cls.wait_block_task(task_id=t.task_id, blocknum=current_block), current_block,)
+                )
                 current_block += 1
                 i += 1
                 await asyncio.sleep(0.01)
@@ -141,7 +146,7 @@ class Command(BaseCommand):
             log.info('Finished queueing %d import_block tasks for Celery. '
                      'Calling waiters to check task results... please wait.', total_blocks)
             
-            await cls.call_creators()
+            # await cls.call_creators()
             await cls.call_waiters()
 
             # rem_tasks = list(cls.tasks.keys())

@@ -1,0 +1,62 @@
+#####
+#
+# Systemd Service file for `privex/EOSHistory`
+#
+# To use this file, copy it into /etc/systemd/system/eoshistory-celery.service , replace `lg` with the username of
+# the Linux account it was installed into, and adjust the paths if necessary.
+#
+# Once adjusted for your specific installation, run the following:
+#
+#    systemctl enable eoshistory-celery.service
+#    systemctl start eoshistory-celery.service
+#
+# eoshistory-celery will now have started in the background as a systemd service, and will automatically start on reboot
+#
+#####
+[Unit]
+Description=Privex EOS History - Celery Workers
+After=network.target
+
+[Service]
+Type=simple
+User=lg
+
+WorkingDirectory=/home/lg/EOSHistory/
+EnvironmentFile=/home/lg/EOSHistory/.env
+
+ExecStart=/home/lg/EOSHistory/run.sh queue
+
+Restart=always
+Environment=PYTHONUNBUFFERED=0
+RestartSec=30
+StandardOutput=syslog
+
+# Hardening measures
+####################
+
+# Provide a private /tmp and /var/tmp.
+PrivateTmp=true
+
+# Mount /usr, /boot/ and /etc read-only for the process.
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+
+#####
+# +===================================================+
+# |                 © 2019 Privex Inc.                |
+# |               https://www.privex.io               |
+# +===================================================+
+# |                                                   |
+# |        Privex EOS History API                     |
+# |        License: GNU AGPL v3                       |
+# |                                                   |
+# |        https://github.com/Privex/EOSHistory       |
+# |                                                   |
+# |        Core Developer(s):                         |
+# |                                                   |
+# |          (+)  Chris (@someguy123) [Privex]        |
+# |                                                   |
+# +===================================================+
+#####

@@ -27,13 +27,11 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 
 """
 
-import os
 import dotenv
-import logging
 from os import getenv as env
 from os.path import dirname, abspath
 
-from privex.helpers import env_bool, env_csv
+from privex.helpers import env_bool, env_csv, env_int
 
 dotenv.load_dotenv()
 
@@ -74,8 +72,8 @@ This only really matters for the first run, as once there are some blocks in the
 determine it's current position from the last database block number.
 """
 
-# EOS_START_BLOCK = 1210000    # Default is 1,210,000 blocks = 605,000 seconds = approx. 7 days of blocks.
-EOS_START_BLOCK = 300
+# Default is 1,210,000 blocks = 605,000 seconds = approx. 7 days of blocks.
+EOS_START_BLOCK = env_int('EOS_START_BLOCK', 1210000)
 """
 NOTE: See :py:attr:`.EOS_START_TYPE` as this number can mean different things based on EOS_START_TYPE.
 
@@ -86,7 +84,7 @@ For an entire week behind head, you'd enter ``1210000`` (the estd. amount of blo
 ensure ``EOS_START_TYPE`` is set to 'relative'.
 """
 
-EOS_SYNC_MAX_QUEUE = 50
+EOS_SYNC_MAX_QUEUE = env_int('EOS_SYNC_MAX_QUEUE', 500)
 """
 Queue no more than this many blocks to be imported at a time.
 
