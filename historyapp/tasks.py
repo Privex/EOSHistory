@@ -53,7 +53,7 @@ class TaskBase(Task):
         log.handlers.clear()
 
 
-@app.task(base=TaskBase)
+@app.task(base=TaskBase, autoretry_for=(Exception,), retry_kwargs={'max_retries': 5, 'countdown': 2})
 def import_block(block: int) -> dict:
     with LockMgr(f'eoshist_impblock:{block}'):
         log.info('Importing block %d via _import_block...', block)
@@ -76,7 +76,7 @@ def import_block(block: int) -> dict:
                     # Import the all actions contained in this TX
                     run_sync(loader.import_actions, tx)
                 except InvalidTransaction as e:
-                    log.warning("Skipping transaction %d out of %d on block %d due to InvalidTransaction: %s",
+                    log.debug("Skipping transaction %d out of %d on block %d due to InvalidTransaction: %s",
                                 total_txs+1, len(raw_block.transactions), block, str(e))
                 except (IntegrityError, errors.UniqueViolation) as e:
                     if 'duplicate key value' in str(e):
@@ -111,15 +111,15 @@ def handle_errors(request: Context, exc, traceback, block):
         else:
             return log.error('An unknown IntegrityError/UniqueViolation occurred while importing block %s - '
                              'Exception: %s %s', block, type(e), str(e))
-    log.error('UNHANDLED EXCEPTION. Task %s raised exception: %s (Message: %s) ... Block: %s\nTraceback: %s',
-              tname, type(e), str(e), block, traceback)
+    log.exception('UNHANDLED EXCEPTION. Task %s raised exception: %s (Message: %s) ... Block: %s\nTraceback: %s',
+                  tname, type(e), str(e), block, traceback)
     return
 
 
 @app.task(base=TaskBase)
 def success_import_block(block_res: dict):
-    log.info('Task import_block reported that block %d and %d transactions were imported successfully :)',
-             block_res.get('block_num'), block_res.get('txs_imported'))
+    log.warning('Task import_block reported that block %d and %d transactions were imported successfully :)',
+                block_res.get('block_num'), block_res.get('txs_imported'))
     # log.info('success_import_block was triggered!')
     # a = list(args)
     # kw = dict(kwargs)

@@ -33,7 +33,8 @@ import dotenv
 from os import getenv as env
 from os.path import dirname, abspath, join
 
-from privex.helpers import env_bool, env_csv, env_int, random_str, empty
+from privex.helpers import env_bool, env_csv, env_int, random_str, empty, \
+    settings as hlp_settings, plugin as hlp_plugin
 
 dotenv.load_dotenv()
 
@@ -186,6 +187,17 @@ DATABASES = {
     },
 }
 
+# RabbitMQ host (used only by EOSHistory itself, not celery)
+RMQ_HOST = 'localhost'
+RMQ_QUEUE = 'eoshist_block'
+
+
+# REDIS_DB = hlp_settings.REDIS_DB = env_int('REDIS_DB', 0)
+# REDIS_HOST = hlp_settings.REDIS_HOST = env('REDIS_HOST', 'localhost')
+# REDIS_PORT = hlp_settings.REDIS_PORT = env_int('REDIS_PORT', 6379)
+# REDIS_QUEUE_NAME = 'eoshist:tasks'
+
+# hlp_plugin.configure_redis()
 
 # By default, caching is done in local memory of the app, which is fine for development, or small scale production.
 # In production, you should probably use Memcached or database caching.
@@ -309,3 +321,10 @@ if DEBUG:
 else:
     STATIC_ROOT = join(BASE_DIR, 'static')
 
+MAX_QUEUE_THREADS = env_int('MAX_QUEUE_THREADS', 4)
+MAX_WAIT_THREADS = env_int('MAX_WAIT_THREADS', 4)
+MAX_BLOCKS_THREAD = env_int('MAX_BLOCKS_THREAD', 100)
+"""Maximum amount of blocks to load per thread"""
+
+MAX_CELERY_QUEUE = env_int('MAX_CELERY_QUEUE', 1000)
+"""Maximum amount of tasks allowed in the celery queue before sync_blocks pauses"""

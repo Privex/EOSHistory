@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "aea4e451a4bd4de08458fb9bf5881d2e8cc2b52fea90faf6b75fd721fb323684"
+            "sha256": "7f1d6b374ada424828d1ba40181ec21717eebee084bf210db8755f450a29ec44"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -370,6 +370,14 @@
                 "sha256:2d82818f5bb3e369420cb3c4060a7970edba416647068eb4c5343488a6c604a8"
             ],
             "version": "==0.4.3"
+        },
+        "pika": {
+            "hashes": [
+                "sha256:4e1a1a6585a41b2341992ec32aadb7a919d649eb82904fd8e4a4e0871c8cf3af",
+                "sha256:9fa76ba4b65034b878b2b8de90ff8660a59d925b087c5bb88f8fdbb4b64a1dbf"
+            ],
+            "index": "pypi",
+            "version": "==1.1.0"
         },
         "pkginfo": {
             "hashes": [
