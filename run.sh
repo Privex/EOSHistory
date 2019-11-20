@@ -95,9 +95,14 @@ msghr() { msg "${_LN}"; }
 # If we don't have sudo, but the user is root, then just create a pass-thru
 # sudo function that simply runs the passed commands via env.
 _debug "??? checking sudo binary..."
-if ! has_binary sudo && [ "$EUID" -eq 0 ]; then
-    sudo() { env "$@"; }
-    has_sudo() { return 0; }
+if ! has_binary sudo; then
+    if [ "$EUID" -eq 0 ]; then
+        sudo() { env "$@"; }
+        has_sudo() { return 0; }
+    else
+        sudo() { return 1; }
+        has_sudo() { return 1; }
+    fi
 else
     has_sudo() { sudo -n ls >/dev/null; }
 fi
@@ -372,24 +377,58 @@ case "$1" in
         git pull
         msg ts bold green " >> Updating Python packages"
         pipenv update
-        msg ts bold green " >> Updating NodeJS packages"
-        yarn install
-        msg ts bold green " >> Re-building frontend JS Vue Components"
-        yarn build
         msg ts bold green " >> Migrating the Postgres database"
         pipenv run ./manage.py migrate
         msg ts bold green " +++ Finished"
+        msghr
         echo
+        msg ts bold cyan " >> Checking if eoshistory systemd services are installed..."
+        if systemctl list-units | grep -q eoshistory; then
+            if [ "$EUID" -eq 0 ]; then
+                _debug "??? user appears to be root. ."
+                msg ts bold green " >>> Restarting eoshistory.service..."
+                systemctl restart eoshistory
+                msg ts bold green " >>> Restarting eoshistory-celery.service..."
+                systemctl restart eoshistory-celery
+            elif has_sudo; then
+                _debug "??? user is not root. has_sudo was true. restarting with sudo..."
+                msg ts bold green " >>> Restarting eoshistory.service..."
+                sudo systemctl restart eoshistory
+                msg ts bold green " >>> Restarting eoshistory-celery.service..."
+                sudo systemctl restart eoshistory-celery
+            else
+                _debug "??? user is not root. has_sudo was false. cannot auto restart..."
+                msg yellow " [!!!] You're not root and you don't have passwordless sudo available."
+                msg yellow " [!!!] This means we can't automatically restart the systemd services."
+                msg yellow " [!!!] Please remember to restart all EOS History services AS ROOT like so:"
+                msg blue "\t\t systemctl restart eoshistory eoshistory-celery"
+            fi
+        else
+            msg yellow " [???] Could not detect any eoshistory systemd units installed"
+            msg yellow " [???] If you have any background services set up for running EOSHistory, make sure to"
+            msg yellow " [???] restart them for the updates to take effect.\n"
+        fi
+        msghr
+
         msg bold yellow "Post-update info:"
-        msg yellow "Please **become root**, and read the below additional steps to finish your update"
+        msg yellow "Please **become root**, and read any additional step(s) below to finish your update:\n"
+        msg yellow "\t - You may wish to update your systemd service files in-case there are any changes:\n"
+        msg blue "\t\t cp -v *.service /etc/systemd/system/"
+        msg blue "\t\t # Open the service files with an editor and adjust them for your installation"
+        msg blue "\t\t nano /etc/systemd/system/eoshistory.service"
+        msg blue "\t\t nano /etc/systemd/system/eoshistory-celery.service"
+        msg blue "\t\t # Reload systemd for it to detect the new service files"
+        msg blue "\t\t systemctl daemon-reload\n"
+        msg yellow "\t - After updating the service files, please remember to restart all EOS History" \
+            "services AS ROOT like so:\n"
+        msg blue "\t\t systemctl restart eoshistory eoshistory-celery\n"
 
-        msg yellow " - You may wish to update your systemd service files in-case there are any changes:"
-        msg blue "\t cp -v *.service /etc/systemd/system/"
-        msg blue "\t systemctl daemon-reload"
+        msghr
+        msg bold green " ### Updater Finished Successfully :) ###"
+        msghr
 
-        msg yellow " - Please remember to restart all EOS History services AS ROOT like so:"
-        msg blue "\t systemctl restart eoshistory eoshistory-celery"
         ;;
+
     serve* | runserv*)
         # Override these defaults inside of `.env`
         : ${HOST='127.0.0.1'}
