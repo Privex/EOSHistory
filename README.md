@@ -169,6 +169,93 @@ $ crontab -e
   *    *   *   *   *    /home/lg/EOSHistory/run.sh cron
 ```
 
+# Improving performance in production
+
+The initial sync of block history can take some time, but there's many factors that can affect the sync speed,
+including congestion of the EOS RPC node, the cache backend you're using, your hardware, or special tuning
+settings such as `EOS_SYNC_MAX_QUEUE`.
+
+You can try some of the tuning tips below if you're unhappy with the sync speed.
+
+### Increase / Decrease the amount of Celery workers
+
+By default, celery (`./run.sh queue` or `./run.sh celery`) will launch as many worker threads as you have CPU cores.
+
+Depending on your CPU, this could either be too many, or too few workers.
+
+There are two ways you can override this (when using run.sh).
+
+1. **Pass the number of workers on the command line** - `./run.sh queue 5` would run 5 workers
+
+2. **Set CELERY_WORKERS in .env** - `CELERY_WORKERS=10` would run 10 workers whenever `./run.sh queue` is ran
+
+Note: CLI arguments take priority. If you set `CELERY_WORKERS` in your `.env` file, then the `.env` value would be
+ignored if an amount of workers was passed on the command line e.g. `./run.sh queue 6`
+
+### Adjust `EOS_SYNC_MAX_QUEUE`
+
+By default, `EOS_SYNC_MAX_QUEUE` is set to `500` - which means that **sync_blocks** 
+(`./run.sh sync_blocks / blocks / cron`) will queue up 500 blocks for Celery to import in the background, before
+it loops through the Celery queue and verifies each block was successfully imported.
+
+Depending on the speed of your system, and how many Celery workers you're running, you may need to play with this
+number to find out what gives the best performance when syncing blocks.
+
+### Try different cache backends
+
+By default, EOSHistory will use `django.core.cache.backends.locmem.LocMemCache` (cache inside python app's memory)
+if the app is in development mode (i.e. `DEBUG=true` in your .env file).
+
+In production (default, or `DEBUG=false`), EOSHistory uses the cache backend `redis_cache.RedisCache` - which
+as the name implies, is a backend to cache using Redis instead.
+
+This cache is used by both the Django application itself, as well as Celery (which handles the background workers
+which process blocks).
+
+In some cases, using memcached may be faster than Redis, especially with a load balancing setup.
+
+To switch to memcached, follow the steps below:
+
+First, install memcached and the development headers (required for the python library):
+
+```sh
+apt install memcached libmemcached11 libmemcached-dev
+```
+
+Next, install the python `pylibmc` library inside of the EOSHistory virtualenv:
+
+```sh
+# Enter whatever folder it's installed at
+cd ~/EOSHistory
+# Install the library into the virtualenv
+pipenv run pip3 install pylibmc
+```
+
+Now, set / change the cache backend in your `.env` file:
+
+```
+CACHE_BACKEND=django.core.cache.backends.memcached.PyLibMCCache
+```
+
+If you're running memcached on a different server, you can specify it using `CACHE_LOCATION`.
+
+You can also specify multiple memcached servers for load balancing:
+
+```.env
+# Specifying an individual memcached server
+CACHE_LOCATION=10.1.2.3:11211
+# Specifying multiple memcached servers for load balancing
+CACHE_LOCATION=10.1.2.3:11211,10.2.3.5:11211,10.8.9.2:11211
+```
+
+Finally, once you've finished installing / configuring it as needed, you should restart the services
+
+```sh
+systemctl restart eoshistory eoshistory-celery
+```
+
+
+### 
 # License
 
 This project is licensed under the **GNU AGPL v3**
@@ -195,7 +282,7 @@ Here's the important parts:
    
    To clarify our stance on those rules: 
    
-   - If you have a completely separate application which simply sends API requests to a copy of Privex CDN Builder
+   - If you have a completely separate application which simply sends API requests to a copy of Privex EOS History API
      that you run, you do not have to release your application under the GNU AGPL v3. 
    - However, you ARE required to place a notice on your application, informing your users that your application
      uses Privex EOS History, with a clear link to the source code (see our example at the top)

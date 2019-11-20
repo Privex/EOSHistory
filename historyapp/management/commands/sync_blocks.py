@@ -1,6 +1,7 @@
 import asyncio
 import getpass
 import random
+import sys
 from time import sleep
 from typing import Tuple, Coroutine, List, Dict
 
@@ -79,7 +80,10 @@ class Command(BaseCommand):
                          "Removing task %s", blocknum, task_id)
             del cls.tasks[task_id]
             return True
-            
+
+        except KeyboardInterrupt:
+            print('Detected CTRL-C. Exiting.')
+            return sys.exit()
         except SoftTimeLimitExceeded:
             log.debug('Import block task "%s" timed out. Will try again later.')
             return None

@@ -119,6 +119,9 @@ env_path="${_RUN_DIR}/.env"
 : ${PORT='8287'}
 : ${GU_WORKERS='4'} # Number of Gunicorn worker processes
 
+# Number of celery workers. If left blank, then celery will run (CPU Cores) workers.
+: ${CELERY_WORKERS=''}
+
 _debug "??? DB_HOST=${DB_HOST}   DB_NAME=${DB_NAME}     DB_USER=${DB_USER}    DB_PORT=${DB_PORT}"
 _debug "??? _DB_URL=${_DB_URL}   PORT=${PORT}     GU_WORKERS=${GU_WORKERS}    S_CORE_VER=${S_CORE_VER}"
 
@@ -299,8 +302,25 @@ _debug "??? begin case statement for first param..."
 msg
 case "$1" in
     queue | celery)
-        msg ts bold green "Starting EOS History Celery Workers"
-        pipenv run celery worker -A eoshistory
+        if (($# > 1)); then
+            CELERY_WORKERS=$2
+            msg ts bold green "Additional argument detected. If CELERY_WORKERS was set in environment it will"
+            msg ts bold green "be ignored - using passed argument '$2' for CELERY_WORKERS instead."
+            sleep 1
+        fi
+        if [ -z "$CELERY_WORKERS" ]; then
+            msg ts bold green "Starting EOS History Celery Workers (workers: auto / match CPU cores)\n"
+            msg ts bold green "NOTE: You can set CELERY_WORKERS in .env to manually set the amount of workers"
+            msg ts bold green "\t e.g.   CELERY_WORKERS=20\n"
+            sleep 1
+            pipenv run celery worker -A eoshistory
+        else
+            CELERY_WORKERS=$((CELERY_WORKERS))
+            msg ts bold green "CELERY_WORKERS was set in environment. Using $CELERY_WORKERS workers instead of auto."
+            sleep 1
+            msg ts bold green "Starting EOS History Celery Workers (workers: $CELERY_WORKERS)"
+            pipenv run celery worker -c "$CELERY_WORKERS" -A eoshistory
+        fi
         ;;
     sync* | block* | cron)
         msg ts bold green "Running sync_blocks management command to import blocks"

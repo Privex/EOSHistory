@@ -26,13 +26,14 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 
 
 """
+import os
 import sys
 
 import dotenv
 from os import getenv as env
 from os.path import dirname, abspath, join
 
-from privex.helpers import env_bool, env_csv, env_int, random_str
+from privex.helpers import env_bool, env_csv, env_int, random_str, empty
 
 dotenv.load_dotenv()
 
@@ -194,17 +195,73 @@ DATABASES = {
 # then set env var CACHE_BACKEND to 'django.core.cache.backends.memcached.PyLibMCCache', and CACHE_LOCATION to
 # ``ip:port`` where 'ip' is the IP/hostname of the memcached server, and 'port' is the memcached port.
 
-# If CACHE_LOCATION is specified, we split the CACHE_LOCATION by comma to allow multiple locations
-_ch_loc = env('CACHE_LOCATION', None)
-CACHE_LOCATION = str(_ch_loc).split(',') if _ch_loc is not None else None
+CACHE_BACKEND = env('CACHE_BACKEND')
+
+CACHE_BACKEND_DEFAULTS = {
+    'redis_cache.RedisCache': dict(
+        location=['localhost:6379'],
+        options=dict(
+            DB=1, PARSER_CLASS='redis.connection.HiredisParser', CONNECTION_POOL_CLASS='redis.BlockingConnectionPool',
+            MAX_CONNECTIONS=1000, PICKLE_VERSION=-1, CONNECTION_POOL_CLASS_KWARGS=dict(max_connections=50, timeout=20),
+        )
+    ),
+    'django.core.cache.backends.locmem.LocMemCache': dict(location=None, options={}),
+    'django.core.cache.backends.memcached.MemcachedCache': dict(location=['127.0.0.1:11211'], options={}),
+    'django.core.cache.backends.memcached.PyLibMCCache': dict(location=['127.0.0.1:11211'], options={}),
+}
+
+REDIS_DEFAULT_OPTIONS = dict(
+    DB=1, PARSER_CLASS='redis.connection.HiredisParser', CONNECTION_POOL_CLASS='redis.BlockingConnectionPool',
+    MAX_CONNECTIONS=1000, PICKLE_VERSION=-1, CONNECTION_POOL_CLASS_KWARGS=dict(max_connections=50, timeout=20),
+)
+
+REDIS_DEFAULT_LOCATION = ['localhost:6379']
+
+DEFAULT_CACHE_LOCATION = None
+"""If the user doesn't specify a backend, """
+DEFAULT_CACHE_OPTIONS = {}
+
+if DEBUG:
+    DEFAULT_CACHE_BACKEND = 'django.core.cache.backends.locmem.LocMemCache'
+else:
+    DEFAULT_CACHE_BACKEND = 'redis_cache.RedisCache'
+    # We only set the default location + options for Redis if the CACHE_BACKEND .env var is unset/empty
+    # if empty(CACHE_BACKEND):
+    #     DEFAULT_CACHE_LOCATION = REDIS_DEFAULT_LOCATION
+    #     DEFAULT_CACHE_OPTIONS = REDIS_DEFAULT_OPTIONS
+
+CACHE_BACKEND = env('CACHE_BACKEND', DEFAULT_CACHE_BACKEND)
+
+DEFAULT_CACHE_LOCATION = CACHE_BACKEND_DEFAULTS.get(CACHE_BACKEND, dict(location=None))['location']
+DEFAULT_CACHE_OPTIONS = CACHE_BACKEND_DEFAULTS.get(CACHE_BACKEND, dict(options={}))['options']
+
+# If the user has set their cache backend to redis, then we need to make sure the default cache location + options
+# are set, regardless of whether DEBUG is enabled or not.
+# if CACHE_BACKEND == 'redis_cache.RedisCache':
+#     DEFAULT_CACHE_LOCATION = REDIS_DEFAULT_LOCATION
+#     DEFAULT_CACHE_OPTIONS = REDIS_DEFAULT_OPTIONS
 
 CACHES = {
     'default': {
-        'BACKEND':  env('CACHE_BACKEND', 'django.core.cache.backends.locmem.LocMemCache'),
-        'LOCATION': CACHE_LOCATION,
+        'BACKEND':  env('CACHE_BACKEND', DEFAULT_CACHE_BACKEND),
+        'LOCATION': env_csv('CACHE_LOCATION', DEFAULT_CACHE_LOCATION),
+        'OPTIONS': DEFAULT_CACHE_OPTIONS
     }
 }
 
+# To add / override cache options, add keys to your .env starting with CACHE_OPTION_
+# For example:
+#     CACHE_OPTION_DB=2
+# Would be equivalent to:
+#     CACHES['default']['OPTIONS']['DB'] = 2
+#
+envkeys = os.environ.keys()
+for k in envkeys:
+    if k[:13].upper() == 'CACHE_OPTION_':
+        kdata = k.split('_')
+        k_key = '_'.join(kdata[2:])
+        CACHES['default']['OPTIONS'][k_key] = env(k)
+    
 
 # Password validation
 # https://docs.djangoproject.com/en/2.2/ref/settings/#auth-password-validators
@@ -245,9 +302,9 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 if DEBUG:
-    STATICFILES_DIRS = [
-        join(BASE_DIR, "static"),
-    ]
+    # STATICFILES_DIRS = [
+    #     join(BASE_DIR, "static"),
+    # ]
     STATIC_ROOT = join(BASE_DIR, 'static')
 else:
     STATIC_ROOT = join(BASE_DIR, 'static')

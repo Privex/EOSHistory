@@ -25,6 +25,8 @@ django-celery-results = "*"
 django-lockmgr = "*"
 markdown = "*"
 gunicorn = "*"
+redis = "*"
+django-redis-cache = "*"
 
 [requires]
 python_version = "3.7"
