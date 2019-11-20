@@ -1,6 +1,7 @@
 import asyncio
 import getpass
 import json
+import math
 import sys
 from threading import Thread
 from typing import Tuple, List
@@ -262,9 +263,15 @@ class Command(BaseCommand):
         current_block = int(start_block)
         
         if blocks_left > MAX_BLOCKS:
-            log.info(" >>> Launching %d import queue threads...", MAX_QUEUE_THREADS)
-            while len(cls.queue_threads) < MAX_QUEUE_THREADS:
-                t = BlockQueue(current_block, current_block + (MAX_BLOCKS - 1), len(cls.queue_threads) + 1)
+            max_threads = math.ceil(blocks_left / MAX_BLOCKS)
+            spin_threads = max_threads if max_threads < MAX_QUEUE_THREADS else MAX_QUEUE_THREADS
+            spin_threads = 1 if spin_threads < 1 else spin_threads
+            log.info(" >>> Launching %d import queue threads...", spin_threads)
+            
+            while len(cls.queue_threads) < spin_threads and current_block <= end_block:
+                _end = current_block + (MAX_BLOCKS - 1)
+                _end = end_block if _end > end_block else _end
+                t = BlockQueue(current_block, _end, len(cls.queue_threads) + 1)
                 t.start()
                 cls.queue_threads += [t]
                 current_block += MAX_BLOCKS
@@ -287,15 +294,7 @@ class Command(BaseCommand):
         with LockMgr(lck):
             log.info("Main sync_blocks loop started. Obtained lock name '%s'.", lck)
             if start_block is None:
-                gaps = find_gaps()
-                if len(gaps) > 0:
-                    log.info('Warning: Found %d separate block gaps. Filling missing block gaps...', len(gaps))
-                    while len(gaps) > 0:
-                        gap_start, gap_end = gaps.pop(0)
-                        log.info('Filling gap between block %d and block %d ...', gap_start, gap_end)
-                        await cls.sync_between(gap_start, gap_end)
-                        await cls.clean_import_threads()
-                        await cls.check_celery()
+                await cls.fill_gaps()
 
                 start_block = settings.EOS_START_BLOCK
                 if EOSBlock.objects.count() > 0:
@@ -399,6 +398,26 @@ class Command(BaseCommand):
                 "\nFinished importing " + str(total_blocks) + " blocks!\n"
                 "\n============================================================================================\n"
             )
+
+    @classmethod
+    async def fill_gaps(cls):
+        gaps = find_gaps()
+        if len(gaps) == 0:
+            return
+        chan, conn = get_rmq_queue()
+        log.info('Warning: Found %d separate block gaps. Filling missing block gaps...', len(gaps))
+        while len(gaps) > 0:
+            gap_start, gap_end = gaps.pop(0)
+            if gap_start == gap_end:
+                log.info('Filling individual missing block %d', gap_start)
+                import_add_task(gap_start, chan)
+                continue
+            gap_end = gap_end + 1
+            log.info('Filling gap between block %d and block %d ...', gap_start, gap_end)
+            await cls.sync_between(gap_start, gap_end)
+            await cls.clean_import_threads()
+            await cls.check_celery()
+        conn.close()
 
     @classmethod
     async def check_celery(cls):

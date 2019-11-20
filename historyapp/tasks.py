@@ -26,6 +26,7 @@ from privex.loghelper import LogHelper
 from psycopg2 import errors
 from lockmgr.lockmgr import LockMgr
 from eoshistory.celery import app
+from eoshistory.settings import config_logger
 from historyapp.lib import eos, loader
 from historyapp.lib.loader import _import_block, InvalidTransaction
 from historyapp.models import EOSBlock, EOSTransaction
@@ -43,7 +44,12 @@ class TaskBase(Task):
         return super().run(*args, **kwargs)
 
     def __init__(self):
-        LogHelper('historyapp.tasks').copy_logger('historyapp.lib.loader')
+        # l = config_logger('historyapp', 'historyapp.tasks', 'historyapp.loader', level=logging.INFO)
+        # l.handlers.clear()
+        
+        _lh = LogHelper('historyapp').copy_logger('historyapp.lib.loader', 'historyapp.tasks')
+        _lh.propagate = False
+        _lh.handlers.clear()
         global log
         _l = logging.getLogger('historyapp.lib.loader')
         _l.propagate = False
@@ -56,9 +62,12 @@ class TaskBase(Task):
 @app.task(base=TaskBase, autoretry_for=(Exception,), retry_kwargs={'max_retries': 5, 'countdown': 2})
 def import_block(block: int) -> dict:
     with LockMgr(f'eoshist_impblock:{block}'):
-        log.info('Importing block %d via _import_block...', block)
+        log.debug('Importing block %d via _import_block...', block)
         with transaction.atomic():
-            db_block, raw_block = run_sync(_import_block, block)
+            _b = run_sync(_import_block, block)
+            if type(_b) not in [tuple, list] or len(_b) == 1:
+                return dict(block_num=_b.number, timestamp=str(_b.timestamp), txs_imported=0)
+            db_block, raw_block = _b
         
             raw_block: eos.EOSBlock
             db_block: EOSBlock
