@@ -61,7 +61,14 @@ if SECRET_KEY is None:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env_bool('DEBUG', False)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env_csv('ALLOWED_HOSTS', ['*'])
+
+if '*' in ALLOWED_HOSTS and not DEBUG:
+    print("\n================================================================================================\n")
+    print('WARNING: ALLOWED_HOSTS currently contains "*". You should configure ALLOWED_HOSTS in your .env')
+    print("so that it's restricted to the domains / IPs you expect this app to be accessed from, e.g.\n")
+    print("    ALLOWED_HOSTS=eos-history.example.com,eoshistory.example.net,1.2.3.4\n")
+    print("\n================================================================================================\n")
 
 # Ignore the whitelist and allow CORS from anywhere
 CORS_ORIGIN_ALLOW_ALL = env_bool('CORS_ORIGIN_ALLOW_ALL', True)
