@@ -1,0 +1,4 @@
+# The static files in the below folders can be generated via ./manage.py collectstatic
+#####
+admin/
+rest_framework/

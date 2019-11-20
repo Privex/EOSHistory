@@ -26,12 +26,13 @@ https://docs.djangoproject.com/en/2.2/ref/settings/
 
 
 """
+import sys
 
 import dotenv
 from os import getenv as env
-from os.path import dirname, abspath
+from os.path import dirname, abspath, join
 
-from privex.helpers import env_bool, env_csv, env_int
+from privex.helpers import env_bool, env_csv, env_int, random_str
 
 dotenv.load_dotenv()
 
@@ -43,10 +44,22 @@ BASE_DIR = dirname(dirname(dirname(abspath(__file__))))
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'gna*8lm&p4n_g*@^e3$%x-wdgy+kp&^8v#&r(7*sk4q06mz!t$'
+SECRET_KEY = env('SECRET_KEY', None)
+
+if SECRET_KEY is None:
+    print('Critical ERROR: No SECRET_KEY set in .env! Cannot continue.')
+    print('Please generate a secure random string used to encrypt sensitive data such as user sessions')
+    print(
+        f"Place the following line into the file {join(BASE_DIR, '.env')} - for production we "
+        f"recommend generating it by hand."
+    )
+    print()
+    print(f'SECRET_KEY={random_str(size=64)}')
+    print()
+    sys.exit()
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env_bool('DEBUG', False)
 
 ALLOWED_HOSTS = []
 
@@ -63,7 +76,7 @@ REST_FRAMEWORK = {
 
 EOS_NODE = env('EOS_NODE', 'https://eos.greymass.com')
 
-EOS_START_TYPE = "relative"
+EOS_START_TYPE = env('EOS_START_TYPE', 'relative')
 """
 EOS_START_TYPE can be either ``"relative"`` (meaning EOS_START_BLOCK is relative to the head block),
 or ``"exact"`` (meaning EOS_START_BLOCK specifies an exact block number to start from).
@@ -161,6 +174,7 @@ DATABASES = {
         'USER':     env('DB_USER', 'eoshistory'),
         'PASSWORD': env('DB_PASS', ''),
         'HOST':     env('DB_HOST', 'localhost'),
+        'PORT':     env('DB_PORT', ''),
     },
 }
 
@@ -222,3 +236,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/2.2/howto/static-files/
 
 STATIC_URL = '/static/'
+
+if DEBUG:
+    STATICFILES_DIRS = [
+        join(BASE_DIR, "static"),
+    ]
+    STATIC_ROOT = join(BASE_DIR, 'static')
+else:
+    STATIC_ROOT = join(BASE_DIR, 'static')
+
