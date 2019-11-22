@@ -40,7 +40,6 @@ import logging
 log = get_task_logger(__name__)
 
 
-
 class TaskBase(Task):
     def run(self, *args, **kwargs):
         return super().run(*args, **kwargs)

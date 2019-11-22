@@ -3,6 +3,8 @@ import getpass
 import json
 import math
 import sys
+from asyncio import CancelledError
+from decimal import Decimal
 from threading import Thread
 from typing import Tuple, List
 
@@ -10,6 +12,7 @@ from django.conf import settings
 from django.core.management import BaseCommand, CommandParser
 from django.db.models.aggregates import Max
 from lockmgr.lockmgr import LockMgr
+from privex.helpers import dec_round
 
 from eoshistory.connections import get_celery_message_count
 # from eoshistory.settings import
@@ -199,31 +202,52 @@ class Command(BaseCommand):
             i = 0
             
             while current_block < head_block:
-                if i % 5000 == 0 or current_block == head_block:
+                blocks_left = head_block - current_block
+                
+                if i % 100 == 0 or current_block == head_block:
+                    log.info('Head block: %d', head_block)
+                    log.info('Current block: %d', current_block)
                     log.info(
                          ' >>> Queued %d blocks out of %d blocks to import.',
                          i, total_blocks
                     )
+                    log.info(
+                        ' >>> %d blocks remaining. Progress: %f%%',
+                        blocks_left, dec_round(
+                            Decimal((i / total_blocks) * 100)
+                        )
+                    )
                 
                 try:
                     await cls.check_celery()
-                except KeyboardInterrupt:
+                except (KeyboardInterrupt, CancelledError):
+                    await cls.clean_import_threads()
                     return
                 except Exception:
                     log.exception('ERROR - Something went wrong checking Celery queue length.')
                 
-                blocks_left = head_block - current_block
-                if blocks_left > MAX_BLOCKS:
-                    log.info(" >>> Launching %d import queue threads...", MAX_QUEUE_THREADS)
-                    while len(cls.queue_threads) < MAX_QUEUE_THREADS:
-                        t = BlockQueue(current_block, current_block + (MAX_BLOCKS - 1), len(cls.queue_threads)+1)
-                        t.start()
-                        cls.queue_threads += [t]
-                        current_block += MAX_BLOCKS
-                        i += MAX_BLOCKS
-                    
+                # if blocks_left > MAX_BLOCKS:
+                # log.info(" >>> Launching %d import queue threads...", MAX_QUEUE_THREADS)
+                # while len(cls.queue_threads) < MAX_QUEUE_THREADS:
+                #     t = BlockQueue(current_block, current_block + (MAX_BLOCKS - 1), len(cls.queue_threads)+1)
+                #     t.start()
+                #     cls.queue_threads += [t]
+                #     current_block += MAX_BLOCKS
+                #     i += MAX_BLOCKS
+                #
+                _end = current_block + settings.EOS_SYNC_MAX_QUEUE
+                _end = head_block if _end > head_block else _end
+                blocks_queued = _end - current_block
+                try:
+                    await cls.sync_between(current_block, _end)
                     await cls.clean_import_threads()
-                await asyncio.sleep(1)
+                    await asyncio.sleep(1)
+                except (KeyboardInterrupt, CancelledError):
+                    log.error('CTRL-C detected. Please wait while threads terminate...')
+                    await cls.clean_import_threads()
+                    return
+                current_block += blocks_queued
+                i += blocks_queued
     
             print(
                 "\n============================================================================================\n"
@@ -259,5 +283,5 @@ class Command(BaseCommand):
             msg_count = get_celery_message_count()
             log.info(' !!! > Celery currently has %d tasks in queue. Pausing until tasks fall below %d',
                      msg_count, settings.MAX_CELERY_QUEUE)
-            await asyncio.sleep(20)
+            await asyncio.sleep(45)
 
