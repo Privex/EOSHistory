@@ -139,19 +139,20 @@ class Command(BaseCommand):
         blocks_left = end_block - start_block
         
         current_block = int(start_block)
-        
+        current_threads = 0
         if blocks_left > MAX_BLOCKS:
             max_threads = math.ceil(blocks_left / MAX_BLOCKS)
             spin_threads = max_threads if max_threads < MAX_QUEUE_THREADS else MAX_QUEUE_THREADS
             spin_threads = 1 if spin_threads < 1 else spin_threads
             log.info(" >>> Launching %d import queue threads...", spin_threads)
             
-            while len(cls.queue_threads) < spin_threads and current_block <= end_block:
+            while current_threads < spin_threads and current_block <= end_block:
                 _end = current_block + MAX_BLOCKS
                 _end = end_block if _end > end_block else _end
                 t = BlockQueue(current_block, _end, len(cls.queue_threads) + 1)
                 t.start()
                 cls.queue_threads += [t]
+                current_threads += 1
                 current_block += MAX_BLOCKS
                 try:
                     await asyncio.sleep(2)
