@@ -455,7 +455,7 @@ case "$1" in
         : ${PORT='8287'}
         : ${GU_WORKERS='4'} # Number of Gunicorn worker processes
 
-        pipenv run gunicorn -b "${HOST}:${PORT}" -w "$GU_WORKERS" eoshistory.wsgi
+        pipenv run gunicorn --timeout 600 -b "${HOST}:${PORT}" -w "$GU_WORKERS" eoshistory.wsgi
         ;;
     *)
         msg bold red "Unknown command.\n"
