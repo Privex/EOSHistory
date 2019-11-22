@@ -4,6 +4,7 @@ import json
 import math
 import sys
 from asyncio import CancelledError
+from datetime import timedelta
 from decimal import Decimal
 from threading import Thread
 from typing import Tuple, List
@@ -11,6 +12,7 @@ from typing import Tuple, List
 from django.conf import settings
 from django.core.management import BaseCommand, CommandParser
 from django.db.models.aggregates import Max
+from django.utils import timezone
 from lockmgr.lockmgr import LockMgr
 from privex.helpers import dec_round
 
@@ -108,6 +110,9 @@ class Command(BaseCommand):
             '--relative-end', type=bool, help='End on this block. ',
             dest='end_block', default=None
         )
+
+        parser.add_argument('-g', '--skip-gaps', action='store_true', dest='skip_gaps', default=False,
+                            help='Do not attempt to fill block gaps.')
         parser.add_argument(
             '--start-type', type=str, help="Either 'rel' (start block means relative blocks behind head),\n"
                                            "or 'exact' (start block means start from this exact block number)",
@@ -128,11 +133,11 @@ class Command(BaseCommand):
         )
         print()
         log.info(' >>> Started SYNC_BLOCKS Django command. Booting up AsyncIO event loop. ')
-        last_block, start_type = options['start_block'], options['start_type']
+        # last_block, start_type = options['start_block'], options['start_type']
         # if options['start_block'] is None:
         #
 
-        asyncio.run(self.sync_blocks(start_block=last_block, start_type=start_type))
+        asyncio.run(self.sync_blocks(**options))
 
     @classmethod
     async def sync_between(cls, start_block, end_block):
@@ -155,7 +160,7 @@ class Command(BaseCommand):
                 current_threads += 1
                 current_block += MAX_BLOCKS
                 try:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)
                     await cls.check_celery()
                 except (KeyboardInterrupt, CancelledError):
                     await cls.clean_import_threads()
@@ -175,7 +180,7 @@ class Command(BaseCommand):
             t.join()
     
     @classmethod
-    async def sync_blocks(cls, start_block=None, start_type=None):
+    async def sync_blocks(cls, start_block=None, start_type=None, **options):
         lck = f'eoshist_sync:{getpass.getuser()}'
         with LockMgr(lck):
             log.info("Main sync_blocks loop started. Obtained lock name '%s'.", lck)
@@ -188,7 +193,8 @@ class Command(BaseCommand):
                 log.exception('ERROR - Something went wrong checking Celery queue length.')
             
             if start_block is None:
-                await cls.fill_gaps()
+                if not options['skip_gaps']:
+                    await cls.fill_gaps()
 
                 start_block = settings.EOS_START_BLOCK
                 if EOSBlock.objects.count() > 0:
@@ -199,7 +205,8 @@ class Command(BaseCommand):
             _start_block = settings.EOS_START_BLOCK if start_block is None else start_block
             _start_block = int(_start_block)
             start_type = settings.EOS_START_TYPE if start_type is None else start_type
-
+            
+            
             log.info("Getting blockchain info from RPC node: %s", settings.EOS_NODE)
             a = eos.Api(url=settings.EOS_NODE)
             info = await a.get_info()
@@ -215,13 +222,15 @@ class Command(BaseCommand):
                 "Importing blocks starting from %d - to head block %d. Total blocks to load: %d",
                 start_block, head_block, total_blocks
             )
-            
+
+            time_start = timezone.now()
+
             i = 0
             
             while current_block < head_block:
                 blocks_left = head_block - current_block
                 
-                if i % 100 == 0 or current_block == head_block:
+                if i > 0 and (i % 100 == 0 or current_block == head_block):
                     log.info('Head block: %d', head_block)
                     log.info('Current block: %d', current_block)
                     log.info(
@@ -234,9 +243,15 @@ class Command(BaseCommand):
                             Decimal((i / total_blocks) * 100)
                         )
                     )
-                
+                    time_taken = timezone.now() - time_start
+                    time_taken_sec = time_taken.total_seconds()
+                    log.info(' >>> Started at %s', time_start)
+                    bps = Decimal(i / time_taken_sec)
+                    eta_secs = blocks_left // bps
+                    log.info(' >>> Estd. blocks per second %f', dec_round(bps))
+                    log.info(' >>> Estd. finish in %f seconds //// %f hours', eta_secs, eta_secs / 60 / 60)
+                    log.info(' >>> Estd. finish date/time: %s', timezone.now() + timedelta(seconds=int(eta_secs)))
 
-                
                 # if blocks_left > MAX_BLOCKS:
                 # log.info(" >>> Launching %d import queue threads...", MAX_QUEUE_THREADS)
                 # while len(cls.queue_threads) < MAX_QUEUE_THREADS:
