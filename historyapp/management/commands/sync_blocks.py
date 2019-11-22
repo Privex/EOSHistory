@@ -153,6 +153,14 @@ class Command(BaseCommand):
                 t.start()
                 cls.queue_threads += [t]
                 current_block += MAX_BLOCKS
+                try:
+                    await asyncio.sleep(2)
+                    await cls.check_celery()
+                except (KeyboardInterrupt, CancelledError):
+                    await cls.clean_import_threads()
+                    return
+                except Exception:
+                    log.exception('ERROR - Something went wrong checking Celery queue length.')
         else:
             t = BlockQueue(start_block, end_block, len(cls.queue_threads) + 1)
             t.start()
@@ -170,6 +178,14 @@ class Command(BaseCommand):
         lck = f'eoshist_sync:{getpass.getuser()}'
         with LockMgr(lck):
             log.info("Main sync_blocks loop started. Obtained lock name '%s'.", lck)
+            try:
+                await cls.check_celery()
+            except (KeyboardInterrupt, CancelledError):
+                await cls.clean_import_threads()
+                return
+            except Exception:
+                log.exception('ERROR - Something went wrong checking Celery queue length.')
+            
             if start_block is None:
                 await cls.fill_gaps()
 
@@ -218,13 +234,7 @@ class Command(BaseCommand):
                         )
                     )
                 
-                try:
-                    await cls.check_celery()
-                except (KeyboardInterrupt, CancelledError):
-                    await cls.clean_import_threads()
-                    return
-                except Exception:
-                    log.exception('ERROR - Something went wrong checking Celery queue length.')
+
                 
                 # if blocks_left > MAX_BLOCKS:
                 # log.info(" >>> Launching %d import queue threads...", MAX_QUEUE_THREADS)
@@ -241,7 +251,7 @@ class Command(BaseCommand):
                 try:
                     await cls.sync_between(current_block, _end)
                     await cls.clean_import_threads()
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(3)
                 except (KeyboardInterrupt, CancelledError):
                     log.error('CTRL-C detected. Please wait while threads terminate...')
                     await cls.clean_import_threads()
@@ -283,5 +293,5 @@ class Command(BaseCommand):
             msg_count = get_celery_message_count()
             log.info(' !!! > Celery currently has %d tasks in queue. Pausing until tasks fall below %d',
                      msg_count, settings.MAX_CELERY_QUEUE)
-            await asyncio.sleep(45)
+            await asyncio.sleep(20)
 
