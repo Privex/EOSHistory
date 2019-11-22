@@ -49,10 +49,10 @@ class EOSBlock(models.Model):
     id = models.CharField(max_length=255, null=True, blank=True)
     """This is not the database ID, but represents the hex 'id' field on the block data"""
     
-    new_producers = models.CharField(max_length=255, null=True, blank=True)
+    new_producers = models.TextField(max_length=10000, null=True, blank=True)
     transaction_mroot = models.CharField(max_length=255, null=True, blank=True)
     action_mroot = models.CharField(max_length=255, null=True, blank=True)
-    producer_signature = models.CharField(max_length=255, null=True, blank=True)
+    producer_signature = models.TextField(max_length=1000, null=True, blank=True)
     header_extensions = JSONField(default=list)
     
     ref_block_prefix = models.BigIntegerField(default=0)

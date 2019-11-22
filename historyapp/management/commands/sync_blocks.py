@@ -67,90 +67,77 @@ def find_gaps(ignore_zero=True) -> List[Tuple[int, int]]:
     return rows
 
 
-def add_task(task_id, block_num, chan: BlockingChannel, routing_key='new_task'):
-    # chan, _ = get_rmq_queue(queue=queue)
-    # r = get_redis()
-    data = json.dumps([task_id, block_num])
-    chan.basic_publish(
-        exchange='', routing_key=routing_key, body=byteify(data),
-        properties=pika.BasicProperties(content_type='text/plain', delivery_mode=1),
-        # mandatory=True
-    )
-    # r.lpush(settings.REDIS_QUEUE_NAME, data)
-    # log.debug('Inserted task ID %s and block number %s into exchange "eoshist" routing key "%s"',
-    #           task_id, block_num, routing_key)
-
-
-def import_add_task(block_num, chan):
-    t = task_import_block(block_num)
-    chan.queue_declare(queue=settings.RMQ_QUEUE, durable=True, exclusive=False, auto_delete=False)
-    add_task(task_id=t.task_id, block_num=block_num, chan=chan)
-
-
-class ImportChecker(Thread):
-    def __init__(self, timeout=30):
-        super().__init__()
-        self.timeout = timeout
-        chan, chan_conn = get_rmq()
-        queue_chan, queue_chan_conn = get_rmq_queue()
-        self.channel = chan
-        self.queue_channel = queue_chan
-        self.conn_queue = queue_chan_conn
-        self.conn = chan_conn
-
-    def wait_block_task(self, task_id: str, blocknum: int, timeout=30):
-        # t = cls.tasks[task_id]  # type: AsyncResult
-        try:
-            t = AsyncResult(task_id)
-            res = t.get(timeout=timeout)
-            # blocknum = t.kwargs['block'] if hasattr(t, 'kwargs') else None
-            if type(res) is dict and 'block_num' in res:
-                log.info('Imported block %s successfully. Removing task %s', blocknum, task_id)
-            else:
-                log.info("Importing block %s didn't raise exception, but didn't return valid dict... "
-                         "Removing task %s", blocknum, task_id)
-            # del cls.tasks[task_id]
-            
-            return True
-    
-        except KeyboardInterrupt:
-            print('Detected CTRL-C. Exiting.')
-            return sys.exit()
-        except SoftTimeLimitExceeded:
-            log.debug('Import block task "%s" timed out. Will try again later.')
-            return None
-        except (Exception, BaseException):
-            log.exception("ERROR: import_block raised an exception. Attempting to retry")
-            try:
-                new_t = task_import_block(blocknum)
-                log.info('Re-queued import_block task for block number: %d - task ID: %s', blocknum, new_t.task_id)
-                add_task(new_t.task_id, blocknum, self.queue_channel)
-                return True
-                # cls.tasks[new_t.task_id] = new_t
-            except (BaseException, Exception, TypeError, AttributeError) as e:
-                log.exception("Cannot retry import as there was an error while trying to re-queue task: %s", t.task_id)
-        return False
-    
-    def run(self) -> None:
-        chan = self.channel
-        log.info('[ImportChecker] Consuming from queue %s', settings.RMQ_QUEUE)
-        while True:
-            try:
-                for method_frame, properties, body in chan.consume(settings.RMQ_QUEUE):
-                    task_id, block_num = json.loads(body)
-                    ret = self.wait_block_task(task_id, block_num, self.timeout)
-                    if not ret:
-                        log.info('Got negative result from wait_block_task. Re-queueing check for task %s / block %s',
-                                 task_id, block_num)
-                        chan.basic_nack(method_frame.delivery_tag)
-                        continue
-                    log.info('Got success from wait_block_task. Sending ack.')
-                    chan.basic_ack(method_frame.delivery_tag)
-            except KeyboardInterrupt:
-                break
-        self.conn.close()
-        self.conn_queue.close()
-        log.info('[ImportChecker] Finished.')
+#
+# def import_add_task(block_num, chan):
+#     t = task_import_block(block_num)
+#     chan.queue_declare(queue=settings.RMQ_QUEUE, durable=True, exclusive=False, auto_delete=False)
+#     add_task(task_id=t.task_id, block_num=block_num, chan=chan)
+#
+#
+# class ImportChecker(Thread):
+#     def __init__(self, timeout=30):
+#         super().__init__()
+#         self.timeout = timeout
+#         chan, chan_conn = get_rmq()
+#         queue_chan, queue_chan_conn = get_rmq_queue()
+#         self.channel = chan
+#         self.queue_channel = queue_chan
+#         self.conn_queue = queue_chan_conn
+#         self.conn = chan_conn
+#
+#     def wait_block_task(self, task_id: str, blocknum: int, timeout=30):
+#         # t = cls.tasks[task_id]  # type: AsyncResult
+#         try:
+#             t = AsyncResult(task_id)
+#             res = t.get(timeout=timeout)
+#             # blocknum = t.kwargs['block'] if hasattr(t, 'kwargs') else None
+#             if type(res) is dict and 'block_num' in res:
+#                 log.info('Imported block %s successfully. Removing task %s', blocknum, task_id)
+#             else:
+#                 log.info("Importing block %s didn't raise exception, but didn't return valid dict... "
+#                          "Removing task %s", blocknum, task_id)
+#             # del cls.tasks[task_id]
+#
+#             return True
+#
+#         except KeyboardInterrupt:
+#             print('Detected CTRL-C. Exiting.')
+#             return sys.exit()
+#         except SoftTimeLimitExceeded:
+#             log.debug('Import block task "%s" timed out. Will try again later.')
+#             return None
+#         except (Exception, BaseException):
+#             log.exception("ERROR: import_block raised an exception. Attempting to retry")
+#             try:
+#                 new_t = task_import_block(blocknum)
+#                 log.info('Re-queued import_block task for block number: %d - task ID: %s', blocknum, new_t.task_id)
+#                 add_task(new_t.task_id, blocknum, self.queue_channel)
+#                 return True
+#                 # cls.tasks[new_t.task_id] = new_t
+#             except (BaseException, Exception, TypeError, AttributeError) as e:
+#                 log.exception("Cannot retry import as there was an error while trying to re-queue task: %s", t.task_id)
+#         return False
+#
+#     def run(self) -> None:
+#         chan = self.channel
+#         log.info('[ImportChecker] Consuming from queue %s', settings.RMQ_QUEUE)
+#         while True:
+#             try:
+#                 for method_frame, properties, body in chan.consume(settings.RMQ_QUEUE):
+#                     task_id, block_num = json.loads(body)
+#                     ret = self.wait_block_task(task_id, block_num, self.timeout)
+#                     if not ret:
+#                         log.info('Got negative result from wait_block_task. Re-queueing check for task %s / block %s',
+#                                  task_id, block_num)
+#                         chan.basic_nack(method_frame.delivery_tag)
+#                         continue
+#                     log.info('Got success from wait_block_task. Sending ack.')
+#                     chan.basic_ack(method_frame.delivery_tag)
+#             except KeyboardInterrupt:
+#                 break
+#         self.conn.close()
+#         self.conn_queue.close()
+#         log.info('[ImportChecker] Finished.')
 
 
 class BlockQueue(Thread):
@@ -159,9 +146,9 @@ class BlockQueue(Thread):
         self.start_block = start_block
         self.end_block = end_block
         self.thread_num = thread_num
-        chan, conn = get_rmq_queue()
-        self.channel = chan
-        self.connection = conn
+        # chan, conn = get_rmq_queue()
+        # self.channel = chan
+        # self.connection = conn
     
     def run(self) -> None:
         i = 1
@@ -172,10 +159,10 @@ class BlockQueue(Thread):
             if i % 100 == 0 or current_block == self.end_block - 1:
                 log.info('[Thread %d] Queued %d blocks out of %d blocks to import',
                          self.thread_num, i, total_blocks)
-            import_add_task(current_block, chan=self.channel)
+            task_import_block(current_block)
             i += 1
             current_block += 1
-        self.connection.close()
+        # self.connection.close()
 
 
 class Command(BaseCommand):
@@ -194,6 +181,14 @@ class Command(BaseCommand):
         parser.add_argument(
             '--start-block', type=int, help='Start from this block (note --start-type affects meaning of this)',
             dest='start_block', default=None
+        )
+        parser.add_argument(
+            '--end-block', type=int, help='End on this block. ',
+            dest='end_block', default=None
+        )
+        parser.add_argument(
+            '--relative-end', type=bool, help='End on this block. ',
+            dest='end_block', default=None
         )
         parser.add_argument(
             '--start-type', type=str, help="Either 'rel' (start block means relative blocks behind head),\n"
@@ -269,7 +264,7 @@ class Command(BaseCommand):
             log.info(" >>> Launching %d import queue threads...", spin_threads)
             
             while len(cls.queue_threads) < spin_threads and current_block <= end_block:
-                _end = current_block + (MAX_BLOCKS - 1)
+                _end = current_block + MAX_BLOCKS
                 _end = end_block if _end > end_block else _end
                 t = BlockQueue(current_block, _end, len(cls.queue_threads) + 1)
                 t.start()
@@ -286,8 +281,7 @@ class Command(BaseCommand):
         while len(cls.queue_threads) > 0:
             t = cls.queue_threads.pop()
             t.join()
-        
-
+    
     @classmethod
     async def sync_blocks(cls, start_block=None, start_type=None):
         lck = f'eoshist_sync:{getpass.getuser()}'
@@ -323,12 +317,12 @@ class Command(BaseCommand):
             )
             
             i = 0
-            log.info(' >>> Starting %d waiter threads', MAX_WAIT_THREADS)
-
-            while len(cls.wait_threads) < MAX_QUEUE_THREADS:
-                t = ImportChecker()
-                t.start()
-                cls.wait_threads += [t]
+            # log.info(' >>> Starting %d waiter threads', MAX_WAIT_THREADS)
+            #
+            # while len(cls.wait_threads) < MAX_QUEUE_THREADS:
+            #     t = ImportChecker()
+            #     t.start()
+            #     cls.wait_threads += [t]
             
             while current_block < head_block:
                 # if len(cls.tasks) >= settings.EOS_SYNC_MAX_QUEUE:
@@ -360,38 +354,12 @@ class Command(BaseCommand):
                         i += MAX_BLOCKS
                     
                     await cls.clean_import_threads()
-                        
-                    
-                
-
-                
-                # import_add_task(current_block)
-                # t = task_import_block(current_block)
-                # cls.tasks[t.task_id] = t
-                # cls.waiters.append(
-                #     (cls.wait_block_task(task_id=t.task_id, blocknum=current_block), current_block,)
-                # )
-                # current_block += 1
-                # i += 1
                 await asyncio.sleep(1)
 
-            log.info(' >>> Waiting on waiter threads to finish...')
-            while len(cls.wait_threads) > 0:
-                t = cls.wait_threads.pop()
-                t.join()
-            
-            # log.info('Finished queueing %d import_block tasks for Celery. '
-            #          'Calling waiters to check task results... please wait.', total_blocks)
-            
-            # await cls.call_creators()
-            # await cls.call_waiters()
-
-            # rem_tasks = list(cls.tasks.keys())
-            # while len(cls.waiters) > 0:
-            #     w, b_num = cls.waiters[]
-            #     log.info('Retrieving remaining block tasks.')
-            #     for tid in rem_tasks:
-            #         await cls.wait_block_task(tid)
+            # log.info(' >>> Waiting on waiter threads to finish...')
+            # while len(cls.wait_threads) > 0:
+            #     t = cls.wait_threads.pop()
+            #     t.join()
     
             print(
                 "\n============================================================================================\n"
@@ -404,20 +372,22 @@ class Command(BaseCommand):
         gaps = find_gaps()
         if len(gaps) == 0:
             return
-        chan, conn = get_rmq_queue()
+        # chan, conn = get_rmq_queue()
         log.info('Warning: Found %d separate block gaps. Filling missing block gaps...', len(gaps))
         while len(gaps) > 0:
             gap_start, gap_end = gaps.pop(0)
             if gap_start == gap_end:
                 log.info('Filling individual missing block %d', gap_start)
-                import_add_task(gap_start, chan)
+                task_import_block(gap_start)
                 continue
             gap_end = gap_end + 1
             log.info('Filling gap between block %d and block %d ...', gap_start, gap_end)
             await cls.sync_between(gap_start, gap_end)
             await cls.clean_import_threads()
+            await asyncio.sleep(1)
             await cls.check_celery()
-        conn.close()
+            
+        # conn.close()
 
     @classmethod
     async def check_celery(cls):

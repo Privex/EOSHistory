@@ -313,13 +313,13 @@ case "$1" in
             msg ts bold green "NOTE: You can set CELERY_WORKERS in .env to manually set the amount of workers"
             msg ts bold green "\t e.g.   CELERY_WORKERS=20\n"
             sleep 1
-            pipenv run celery worker -A eoshistory
+            pipenv run celery worker -l INFO -A eoshistory
         else
             CELERY_WORKERS=$((CELERY_WORKERS))
             msg ts bold green "CELERY_WORKERS was set in environment. Using $CELERY_WORKERS workers instead of auto."
             sleep 1
             msg ts bold green "Starting EOS History Celery Workers (workers: $CELERY_WORKERS)"
-            pipenv run celery worker -c "$CELERY_WORKERS" -A eoshistory
+            pipenv run celery worker -l INFO -c "$CELERY_WORKERS" -A eoshistory
         fi
         ;;
     sync* | block* | cron)

@@ -254,6 +254,66 @@ Finally, once you've finished installing / configuring it as needed, you should 
 systemctl restart eoshistory eoshistory-celery
 ```
 
+# Troubleshooting notes
+
+### Check amount of tasks in Celery queue
+
+Using `rabbitmqctl` you can check how many messages are in the Celery task queue.
+
+```bash
+$ rabbitmqctl list_queues name messages messages_ready messages_unacknowledged
+
+    Timeout: 60.0 seconds ...
+    Listing queues for vhost / ...
+    name	messages	messages_ready	messages_unacknowledged
+    celery	1173	1113	60
+```
+
+### Clear Celery task queue
+
+If you've over-filled the Celery task queue, or need to simply stop Celery from processing previous import tasks
+added by `sync_blocks`, you can clear the task queue by running:
+
+```bash
+$ rabbitmqctl purge_queue celery
+# Purging queue 'celery' in vhost '/' ...
+```
+
+### Checking / clearing locks
+
+Display all locks
+
+```bash
+./manage.py list_locks
+# There are currently 1 active locks using Privex Django-LockMgr
+#=========================================================
+#<Lock name='eoshist_sync:chris' locked_by='example' lock_process='None' locked_until='2019-11-22 04:47:47.925916+00:00'>
+#=========================================================
+```
+
+Clear a given lock by name
+
+```bash
+./manage.py clear_lock eoshist_sync:chris
+
+#Releasing lock eoshist_sync:chris from LockMgr...
+#Lock eoshist_sync:chris has been removed (if it exists).
+#=========================================================
+#Finished clearing locks.
+#=========================================================
+```
+
+Delete ALL locks (only do this as a last resort, make sure nothing is running in the background):
+
+```
+./manage.py reset_locks                  
+#WARNING: You are about to clear ALL locks set using Privex LockMgr.
+#You should only do this if you know what you're doing, and have made sure to stop any running
+#instances of your application, to ensure no conflicts are caused by removing ALL LOCKS.
+
+#The following 5 locks would be removed:
+
+```
 
 ### 
 # License

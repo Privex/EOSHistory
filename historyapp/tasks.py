@@ -18,6 +18,7 @@ Celery tasks for running in the background
 
 """
 from celery.app.task import Context, Task
+from celery.utils.log import get_task_logger
 from django.db import transaction
 from django.db.utils import IntegrityError
 from lockmgr.lockmgr import LockMgr
@@ -32,31 +33,45 @@ from historyapp.lib.loader import _import_block, InvalidTransaction
 from historyapp.models import EOSBlock, EOSTransaction
 import logging
 
-log = logging.getLogger(__name__)
-log.propagate = False
-log.handlers.clear()
+# log = logging.getLogger(__name__)
+# log.propagate = False
+# log.handlers.clear()
+
+log = get_task_logger(__name__)
 
 # Clear all logging because it's being ran in celery.
 
 
 class TaskBase(Task):
     def run(self, *args, **kwargs):
+        # _lh = LogHelper('historyapp').copy_logger('historyapp.lib.loader', 'historyapp.tasks')
+        # _lh.propagate = False
+        # _lh.handlers.clear()
+        # global log
+        # _l = logging.getLogger('historyapp.lib.loader')
+        # _l.propagate = False
+        # _l.handlers.clear()
+        # log = logging.getLogger(__name__)
+        # log.propagate = False
+        # log.handlers.clear()
         return super().run(*args, **kwargs)
 
     def __init__(self):
+        global log
+        log.handlers.clear()
         # l = config_logger('historyapp', 'historyapp.tasks', 'historyapp.loader', level=logging.INFO)
         # l.handlers.clear()
         
-        _lh = LogHelper('historyapp').copy_logger('historyapp.lib.loader', 'historyapp.tasks')
-        _lh.propagate = False
-        _lh.handlers.clear()
-        global log
+        # _lh = LogHelper('historyapp').copy_logger('historyapp.lib.loader', 'historyapp.tasks')
+        # _lh.propagate = False
+        # _lh.handlers.clear()
+        # global log
         _l = logging.getLogger('historyapp.lib.loader')
         _l.propagate = False
         _l.handlers.clear()
-        log = logging.getLogger(__name__)
-        log.propagate = False
-        log.handlers.clear()
+        # log = logging.getLogger(__name__)
+        # log.propagate = False
+        # log.handlers.clear()
 
 
 @app.task(base=TaskBase, autoretry_for=(Exception,), retry_kwargs={'max_retries': 5, 'countdown': 2})
