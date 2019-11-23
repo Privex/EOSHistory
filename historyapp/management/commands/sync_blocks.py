@@ -113,6 +113,8 @@ class Command(BaseCommand):
 
         parser.add_argument('-g', '--skip-gaps', action='store_true', dest='skip_gaps', default=False,
                             help='Do not attempt to fill block gaps.')
+        parser.add_argument('-k', '--gaps-only', action='store_true', dest='gaps_only', default=False,
+                            help='Only fill gaps (do not sync blocks)')
         parser.add_argument(
             '--start-type', type=str, help="Either 'rel' (start block means relative blocks behind head),\n"
                                            "or 'exact' (start block means start from this exact block number)",
@@ -182,30 +184,34 @@ class Command(BaseCommand):
     @classmethod
     async def sync_blocks(cls, start_block=None, start_type=None, **options):
         lck = f'eoshist_sync:{getpass.getuser()}'
-        with LockMgr(lck):
-            log.info("Main sync_blocks loop started. Obtained lock name '%s'.", lck)
-            try:
-                await cls.check_celery()
-            except (KeyboardInterrupt, CancelledError):
-                await cls.clean_import_threads()
-                return
-            except Exception:
-                log.exception('ERROR - Something went wrong checking Celery queue length.')
-            
-            if start_block is None:
-                if not options['skip_gaps']:
-                    await cls.fill_gaps()
+        log.info("Main sync_blocks loop started.")
+        try:
+            await cls.check_celery()
+        except (KeyboardInterrupt, CancelledError):
+            await cls.clean_import_threads()
+            return
+        except Exception:
+            log.exception('ERROR - Something went wrong checking Celery queue length.')
 
-                start_block = settings.EOS_START_BLOCK
-                if EOSBlock.objects.count() > 0:
-                    start_block = EOSBlock.objects.aggregate(Max('number'))['number__max']
-                    start_type = 'exact'
-                    log.info('Found existing blocks. Starting from block %d (changed start_type to exact)', start_block)
+        if not options['skip_gaps']:
+            await cls.fill_gaps()
+        
+        if options['gaps_only']:
+            log.info('Requested gaps_only, not skipping blocks...')
+        
+        if start_block is None:
             
+            start_block = settings.EOS_START_BLOCK
+            if EOSBlock.objects.count() > 0:
+                start_block = EOSBlock.objects.aggregate(Max('number'))['number__max']
+                start_type = 'exact'
+                log.info('Found existing blocks. Starting from block %d (changed start_type to exact)', start_block)
+
+        with LockMgr(lck) as lm:
+            log.info('Obtained lock name %s', lck)
             _start_block = settings.EOS_START_BLOCK if start_block is None else start_block
             _start_block = int(_start_block)
             start_type = settings.EOS_START_TYPE if start_type is None else start_type
-            
             
             log.info("Getting blockchain info from RPC node: %s", settings.EOS_NODE)
             a = eos.Api(url=settings.EOS_NODE)
@@ -228,6 +234,7 @@ class Command(BaseCommand):
             i = 0
             
             while current_block < head_block:
+                lm.renew(expires=300, add_time=False)
                 blocks_left = head_block - current_block
                 
                 if i > 0 and (i % 100 == 0 or current_block == head_block):
@@ -252,15 +259,6 @@ class Command(BaseCommand):
                     log.info(' >>> Estd. finish in %f seconds //// %f hours', eta_secs, eta_secs / 60 / 60)
                     log.info(' >>> Estd. finish date/time: %s', timezone.now() + timedelta(seconds=int(eta_secs)))
 
-                # if blocks_left > MAX_BLOCKS:
-                # log.info(" >>> Launching %d import queue threads...", MAX_QUEUE_THREADS)
-                # while len(cls.queue_threads) < MAX_QUEUE_THREADS:
-                #     t = BlockQueue(current_block, current_block + (MAX_BLOCKS - 1), len(cls.queue_threads)+1)
-                #     t.start()
-                #     cls.queue_threads += [t]
-                #     current_block += MAX_BLOCKS
-                #     i += MAX_BLOCKS
-                #
                 _end = current_block + settings.EOS_SYNC_MAX_QUEUE
                 _end = head_block if _end > head_block else _end
                 blocks_queued = _end - current_block
@@ -286,20 +284,27 @@ class Command(BaseCommand):
         gaps = find_gaps()
         if len(gaps) == 0:
             return
-        # chan, conn = get_rmq_queue()
-        log.info('Warning: Found %d separate block gaps. Filling missing block gaps...', len(gaps))
-        while len(gaps) > 0:
-            gap_start, gap_end = gaps.pop(0)
-            if gap_start == gap_end:
-                log.info('Filling individual missing block %d', gap_start)
-                task_import_block(gap_start)
-                continue
-            gap_end = gap_end + 1
-            log.info('Filling gap between block %d and block %d ...', gap_start, gap_end)
-            await cls.sync_between(gap_start, gap_end)
-            await cls.clean_import_threads()
-            await asyncio.sleep(1)
-            await cls.check_celery()
+        lck = f'eoshist_gaps:{getpass.getuser()}'
+        with LockMgr(lck) as lm:
+            # chan, conn = get_rmq_queue()
+            log.info('Warning: Found %d separate block gaps. Filling missing block gaps...', len(gaps))
+            i = 0
+            total_gaps = len(gaps)
+            while len(gaps) > 0:
+                gap_start, gap_end = gaps.pop(0)
+                i += 1
+                if gap_start == gap_end:
+                    log.info('[Gap %d / %d] Filling individual missing block %d', i, total_gaps, gap_start)
+                    task_import_block(gap_start)
+                    continue
+                gap_end = gap_end + 1
+                log.info('[Gap %d / %d] Filling gap between block %d and block %d ...',
+                         i, total_gaps, gap_start, gap_end)
+                await cls.sync_between(gap_start, gap_end)
+                await cls.clean_import_threads()
+                await asyncio.sleep(1)
+                await cls.check_celery()
+                lm.renew(expires=300, add_time=False)
             
         # conn.close()
 
