@@ -198,6 +198,7 @@ class Command(BaseCommand):
         
         if options['gaps_only']:
             log.info('Requested gaps_only, not skipping blocks...')
+            return
         
         if start_block is None:
             
