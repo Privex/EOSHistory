@@ -83,6 +83,8 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': ('django_filters.rest_framework.DjangoFilterBackend',)
 }
 
+DEFAULT_CELERY_QUEUE = env('DEFAULT_CELERY_QUEUE', 'eoshist')
+
 EOS_NODE = env('EOS_NODE', 'https://eos.greymass.com')
 
 EOS_START_TYPE = env('EOS_START_TYPE', 'relative')

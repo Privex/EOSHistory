@@ -132,11 +132,12 @@ def success_import_block(block_res: dict):
     # log.info('success_import_block finished.')
 
 
-def task_import_block(block: int):
+def task_import_block(block: int, queue='celery'):
     return import_block.apply_async(
         kwargs=dict(block=int(block)),
         link=success_import_block.s(),
         link_error=handle_errors.s(block),
+        queue=queue,
     )
 
 

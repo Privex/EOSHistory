@@ -68,11 +68,12 @@ def find_gaps(ignore_zero=True) -> List[Tuple[int, int]]:
 
 
 class BlockQueue(Thread):
-    def __init__(self, start_block: int, end_block: int, thread_num=1):
+    def __init__(self, start_block: int, end_block: int, thread_num=1, queue=None):
         super().__init__()
         self.start_block = start_block
         self.end_block = end_block
         self.thread_num = thread_num
+        self.queue = queue
     
     def run(self) -> None:
         i = 1
@@ -83,7 +84,9 @@ class BlockQueue(Thread):
             if i % 100 == 0 or current_block == self.end_block - 1:
                 log.info('[Thread %d] Queued %d blocks out of %d blocks to import',
                          self.thread_num, i, total_blocks)
-            task_import_block(current_block)
+            args = {"block": current_block}
+            if self.queue is not None: args['queue'] = self.queue
+            task_import_block(**args)
             i += 1
             current_block += 1
 
@@ -93,6 +96,9 @@ class Command(BaseCommand):
     
     queue_threads = []
     wait_threads = []
+    lock_sync_blocks = None
+    lock_fill_gaps = None
+    queue: str = None
     
     def __init__(self):
         super(Command, self).__init__()
@@ -103,12 +109,14 @@ class Command(BaseCommand):
             dest='start_block', default=None
         )
         parser.add_argument(
-            '--end-block', type=int, help='End on this block. ',
+            '--end-block', type=int, help='End on this block number. If --relative-blocks is passed, this option '
+                                          'changes to "sync this many blocks from start_block".',
             dest='end_block', default=None
         )
         parser.add_argument(
-            '--relative-end', type=bool, help='End on this block. ',
-            dest='end_block', default=None
+            '--relative-end', type=bool, help='Change the meaning of --end-block from exact (sync until block x)'
+                                              'to relative (sync x blocks from start_block)',
+            dest='relative_end', default=False
         )
 
         parser.add_argument('-g', '--skip-gaps', action='store_true', dest='skip_gaps', default=False,
@@ -119,6 +127,12 @@ class Command(BaseCommand):
             '--start-type', type=str, help="Either 'rel' (start block means relative blocks behind head),\n"
                                            "or 'exact' (start block means start from this exact block number)",
             dest='start_type', default=None
+        )
+
+        parser.add_argument(
+            '-q', '--queue', type=str, help="Use a different Celery queue (also changes lock prefix allowing for "
+                                            "multiple instances of sync_blocks)",
+            dest='queue', default=None
         )
     
     def handle(self, *args, **options):
@@ -134,10 +148,15 @@ class Command(BaseCommand):
             "#=========================================================#\n"
         )
         print()
-        log.info(' >>> Started SYNC_BLOCKS Django command. Booting up AsyncIO event loop. ')
+        
         # last_block, start_type = options['start_block'], options['start_type']
         # if options['start_block'] is None:
         #
+        Command.queue = options.pop('queue', settings.DEFAULT_CELERY_QUEUE)
+        Command.lock_sync_blocks = f'eoshist_sync:{Command.queue}:{getpass.getuser()}'
+        Command.lock_fill_gaps = f'eoshist_gaps:{Command.queue}:{getpass.getuser()}'
+        log.info(' >>> Using Celery queue "%s"', Command.queue)
+        log.info(' >>> Started SYNC_BLOCKS Django command. Booting up AsyncIO event loop. ')
 
         asyncio.run(self.sync_blocks(**options))
 
@@ -156,7 +175,7 @@ class Command(BaseCommand):
             while current_threads < spin_threads and current_block <= end_block:
                 _end = current_block + MAX_BLOCKS
                 _end = end_block if _end > end_block else _end
-                t = BlockQueue(current_block, _end, len(cls.queue_threads) + 1)
+                t = BlockQueue(current_block, _end, len(cls.queue_threads) + 1, queue=cls.queue)
                 t.start()
                 cls.queue_threads += [t]
                 current_threads += 1
@@ -170,7 +189,7 @@ class Command(BaseCommand):
                 except Exception:
                     log.exception('ERROR - Something went wrong checking Celery queue length.')
         else:
-            t = BlockQueue(start_block, end_block, len(cls.queue_threads) + 1)
+            t = BlockQueue(start_block, end_block, len(cls.queue_threads) + 1, queue=cls.queue)
             t.start()
             cls.queue_threads += [t]
 
@@ -183,7 +202,7 @@ class Command(BaseCommand):
     
     @classmethod
     async def sync_blocks(cls, start_block=None, start_type=None, **options):
-        lck = f'eoshist_sync:{getpass.getuser()}'
+        lck = cls.lock_sync_blocks
         log.info("Main sync_blocks loop started.")
         try:
             await cls.check_celery()
@@ -200,13 +219,19 @@ class Command(BaseCommand):
             log.info('Requested gaps_only, not skipping blocks...')
             return
         
+        end_block = options.pop('end_block')
+        relative_end = options.pop('relative_end', False)
+        
         if start_block is None:
-            
             start_block = settings.EOS_START_BLOCK
             if EOSBlock.objects.count() > 0:
                 start_block = EOSBlock.objects.aggregate(Max('number'))['number__max']
                 start_type = 'exact'
                 log.info('Found existing blocks. Starting from block %d (changed start_type to exact)', start_block)
+
+        if end_block is not None and relative_end:
+            _end = int(end_block)
+            end_block = start_block + _end
 
         with LockMgr(lck) as lm:
             log.info('Obtained lock name %s', lck)
@@ -222,24 +247,32 @@ class Command(BaseCommand):
             if start_type.lower() == 'relative':
                 start_block = head_block - int(_start_block)
 
+            if end_block is not None:
+                if end_block > head_block:
+                    log.error("ERROR: End block '%d' is higher than actual head block '%d'. Cannot sync.",
+                              end_block, head_block)
+                    return
+            else:
+                end_block = head_block
+            
             current_block = int(start_block)
-            total_blocks = head_block - start_block
+            total_blocks = end_block - start_block
 
             log.info(
-                "Importing blocks starting from %d - to head block %d. Total blocks to load: %d",
-                start_block, head_block, total_blocks
+                "Importing blocks starting from %d - to end block %d. Total blocks to load: %d",
+                start_block, end_block, total_blocks
             )
 
             time_start = timezone.now()
 
             i = 0
             
-            while current_block < head_block:
+            while current_block < end_block:
                 lm.renew(expires=300, add_time=False)
-                blocks_left = head_block - current_block
+                blocks_left = end_block - current_block
                 
-                if i > 0 and (i % 100 == 0 or current_block == head_block):
-                    log.info('Head block: %d', head_block)
+                if i > 0 and (i % 100 == 0 or current_block == end_block):
+                    log.info('End block: %d // Head block: %d', end_block, head_block)
                     log.info('Current block: %d', current_block)
                     log.info(
                          ' >>> Queued %d blocks out of %d blocks to import.',
@@ -261,7 +294,7 @@ class Command(BaseCommand):
                     log.info(' >>> Estd. finish date/time: %s', timezone.now() + timedelta(seconds=int(eta_secs)))
 
                 _end = current_block + settings.EOS_SYNC_MAX_QUEUE
-                _end = head_block if _end > head_block else _end
+                _end = end_block if _end > end_block else _end
                 blocks_queued = _end - current_block
                 try:
                     await cls.sync_between(current_block, _end, renew=lck)
@@ -279,9 +312,9 @@ class Command(BaseCommand):
                 log.info('Finished syncing blocks. Waiting for Celery queue to empty completely,')
                 log.info('then filling any leftover gaps.')
                 log.info('=============================================================================')
-                await cls.check_celery(max_queue=0)
+                await cls.check_celery(max_queue=2)
                 await cls.fill_gaps()
-                await cls.check_celery(max_queue=0)
+                await cls.check_celery(max_queue=2)
 
             print(
                 "\n============================================================================================\n"
@@ -294,7 +327,7 @@ class Command(BaseCommand):
         gaps = find_gaps()
         if len(gaps) == 0:
             return
-        lck = f'eoshist_gaps:{getpass.getuser()}'
+        lck = cls.lock_fill_gaps
         with LockMgr(lck) as lm:
             # chan, conn = get_rmq_queue()
             log.info('Warning: Found %d separate block gaps. Filling missing block gaps...', len(gaps))
@@ -305,7 +338,7 @@ class Command(BaseCommand):
                 i += 1
                 if gap_start == gap_end:
                     log.info('[Gap %d / %d] Filling individual missing block %d', i, total_gaps, gap_start)
-                    task_import_block(gap_start)
+                    task_import_block(gap_start, queue=cls.queue)
                     continue
                 gap_end = gap_end + 1
                 log.info('[Gap %d / %d] Filling gap between block %d and block %d ...',
@@ -318,8 +351,8 @@ class Command(BaseCommand):
     
     @classmethod
     async def check_celery(cls, renew=None, max_queue=settings.MAX_CELERY_QUEUE):
-        while get_celery_message_count() >= max_queue:
-            msg_count = get_celery_message_count()
+        while get_celery_message_count(queue=cls.queue) >= max_queue:
+            msg_count = get_celery_message_count(queue=cls.queue)
             log.info(' !!! > Celery currently has %d tasks in queue. Pausing until tasks fall below %d',
                      msg_count, max_queue)
             if renew is not None:

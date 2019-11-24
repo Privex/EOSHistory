@@ -302,24 +302,30 @@ _debug "??? begin case statement for first param..."
 msg
 case "$1" in
     queue | celery)
+        CELERY_QUEUE="eoshist"
         if (($# > 1)); then
             CELERY_WORKERS=$2
             msg ts bold green "Additional argument detected. If CELERY_WORKERS was set in environment it will"
             msg ts bold green "be ignored - using passed argument '$2' for CELERY_WORKERS instead."
             sleep 1
         fi
+        if (($# > 2)); then
+            CELERY_QUEUE="$3"
+            msg ts bold green "Third argument detected. Using Celery queue $CELERY_QUEUE"
+        fi
+
         if [ -z "$CELERY_WORKERS" ]; then
             msg ts bold green "Starting EOS History Celery Workers (workers: auto / match CPU cores)\n"
             msg ts bold green "NOTE: You can set CELERY_WORKERS in .env to manually set the amount of workers"
             msg ts bold green "\t e.g.   CELERY_WORKERS=20\n"
             sleep 1
-            pipenv run celery worker -l INFO -A eoshistory
+            pipenv run celery worker -l INFO -Q "$CELERY_QUEUE" -A eoshistory
         else
             CELERY_WORKERS=$((CELERY_WORKERS))
             msg ts bold green "CELERY_WORKERS was set in environment. Using $CELERY_WORKERS workers instead of auto."
             sleep 1
             msg ts bold green "Starting EOS History Celery Workers (workers: $CELERY_WORKERS)"
-            pipenv run celery worker -l INFO -c "$CELERY_WORKERS" -A eoshistory
+            pipenv run celery worker -l INFO -Q "$CELERY_QUEUE" -c "$CELERY_WORKERS" -A eoshistory
         fi
         ;;
     sync* | block* | cron)

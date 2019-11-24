@@ -28,9 +28,9 @@ def get_rmq_queue(queue=settings.RMQ_QUEUE, **kwargs) -> Tuple[BlockingChannel, 
     return channel, connection
 
 
-def get_celery_message_count(**kwargs):
+def get_celery_message_count(queue=settings.DEFAULT_CELERY_QUEUE, **kwargs):
     channel, connection = get_rmq(**kwargs)
-    q = channel.queue_declare("celery", durable=True)
+    q = channel.queue_declare(queue, durable=True)
     msg_count = int(q.method.message_count)
     connection.close()
     return msg_count
