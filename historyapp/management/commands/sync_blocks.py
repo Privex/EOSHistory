@@ -359,5 +359,5 @@ class Command(BaseCommand):
             if renew is not None:
                 # Ensure the lock doesn't expire due to waiting for Celery
                 renew_lock(renew, expires=25, add_time=True, create=True)
-            await asyncio.sleep(20)
+            await asyncio.sleep(15)
 

@@ -325,8 +325,8 @@ else:
 
 MAX_QUEUE_THREADS = env_int('MAX_QUEUE_THREADS', 4)
 MAX_WAIT_THREADS = env_int('MAX_WAIT_THREADS', 4)
-MAX_BLOCKS_THREAD = env_int('MAX_BLOCKS_THREAD', 50)
+MAX_BLOCKS_THREAD = env_int('MAX_BLOCKS_THREAD', 25)
 """Maximum amount of blocks to load per thread"""
 
-MAX_CELERY_QUEUE = env_int('MAX_CELERY_QUEUE', 500)
+MAX_CELERY_QUEUE = env_int('MAX_CELERY_QUEUE', 100)
 """Maximum amount of tasks allowed in the celery queue before sync_blocks pauses"""
