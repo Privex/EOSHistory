@@ -17,6 +17,7 @@ Various async functions for importing / parsing blockchain data from EOS into mo
     +===================================================+
 
 """
+import random
 from decimal import Decimal
 from typing import Union, List, Tuple
 import pytz
@@ -60,7 +61,7 @@ async def _import_block(block: Union[eos.EOSBlock, int]) -> Tuple[EOSBlock, eos.
         except EOSBlock.DoesNotExist:
             log.debug('Checked DB for existing block but not found. Continuing with import.')
         
-        api = eos.Api(url=settings.EOS_NODE)
+        api = eos.Api(url=random.choice(settings.EOS_NODE))
         b = await api.get_block(block)
         block_num = b.block_num
     else:

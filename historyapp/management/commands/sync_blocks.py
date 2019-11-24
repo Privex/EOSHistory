@@ -2,6 +2,7 @@ import asyncio
 import getpass
 import json
 import math
+import random
 import sys
 from asyncio import CancelledError
 from datetime import timedelta
@@ -239,9 +240,9 @@ class Command(BaseCommand):
             _start_block = settings.EOS_START_BLOCK if start_block is None else start_block
             _start_block = int(_start_block)
             start_type = settings.EOS_START_TYPE if start_type is None else start_type
-            
-            log.info("Getting blockchain info from RPC node: %s", settings.EOS_NODE)
-            a = eos.Api(url=settings.EOS_NODE)
+            _node = random.choice(settings.EOS_NODE)
+            log.info("Getting blockchain info from RPC node: %s", _node)
+            a = eos.Api(url=_node)
             info = await a.get_info()
             head_block = int(info['head_block_num'])
             start_block = int(_start_block)
