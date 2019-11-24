@@ -13,7 +13,7 @@ from django.conf import settings
 from django.core.management import BaseCommand, CommandParser
 from django.db.models.aggregates import Max
 from django.utils import timezone
-from lockmgr.lockmgr import LockMgr
+from lockmgr.lockmgr import LockMgr, renew_lock
 from privex.helpers import dec_round
 
 from eoshistory.connections import get_celery_message_count
@@ -142,7 +142,7 @@ class Command(BaseCommand):
         asyncio.run(self.sync_blocks(**options))
 
     @classmethod
-    async def sync_between(cls, start_block, end_block):
+    async def sync_between(cls, start_block, end_block, renew=None):
         blocks_left = end_block - start_block
         
         current_block = int(start_block)
@@ -163,7 +163,7 @@ class Command(BaseCommand):
                 current_block += MAX_BLOCKS
                 try:
                     await asyncio.sleep(1)
-                    await cls.check_celery()
+                    await cls.check_celery(renew=renew)
                 except (KeyboardInterrupt, CancelledError):
                     await cls.clean_import_threads()
                     return
@@ -264,7 +264,7 @@ class Command(BaseCommand):
                 _end = head_block if _end > head_block else _end
                 blocks_queued = _end - current_block
                 try:
-                    await cls.sync_between(current_block, _end)
+                    await cls.sync_between(current_block, _end, renew=lck)
                     await cls.clean_import_threads()
                     await asyncio.sleep(3)
                 except (KeyboardInterrupt, CancelledError):
@@ -273,7 +273,16 @@ class Command(BaseCommand):
                     return
                 current_block += blocks_queued
                 i += blocks_queued
-    
+
+            if not options['skip_gaps']:
+                log.info('=============================================================================')
+                log.info('Finished syncing blocks. Waiting for Celery queue to empty completely,')
+                log.info('then filling any leftover gaps.')
+                log.info('=============================================================================')
+                await cls.check_celery(max_queue=0)
+                await cls.fill_gaps()
+                await cls.check_celery(max_queue=0)
+
             print(
                 "\n============================================================================================\n"
                 "\nFinished importing " + str(total_blocks) + " blocks!\n"
@@ -304,16 +313,17 @@ class Command(BaseCommand):
                 await cls.sync_between(gap_start, gap_end)
                 await cls.clean_import_threads()
                 await asyncio.sleep(1)
-                await cls.check_celery()
+                await cls.check_celery(renew=lck)
                 lm.renew(expires=300, add_time=False)
-            
-        # conn.close()
-
+    
     @classmethod
-    async def check_celery(cls):
-        while get_celery_message_count() >= settings.MAX_CELERY_QUEUE:
+    async def check_celery(cls, renew=None, max_queue=settings.MAX_CELERY_QUEUE):
+        while get_celery_message_count() >= max_queue:
             msg_count = get_celery_message_count()
             log.info(' !!! > Celery currently has %d tasks in queue. Pausing until tasks fall below %d',
-                     msg_count, settings.MAX_CELERY_QUEUE)
+                     msg_count, max_queue)
+            if renew is not None:
+                # Ensure the lock doesn't expire due to waiting for Celery
+                renew_lock(renew, expires=25, add_time=True, create=True)
             await asyncio.sleep(20)
 
