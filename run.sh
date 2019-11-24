@@ -330,7 +330,7 @@ case "$1" in
         ;;
     sync* | block* | cron)
         msg ts bold green "Running sync_blocks management command to import blocks"
-        pipenv run ./manage.py sync_blocks
+        pipenv run ./manage.py sync_blocks "${@:2}"
         ;;
     show_dep* | print_dep*)
         msg cyan "Below is the status of dependencies you have or don't have installed:\n"
