@@ -14,7 +14,7 @@ from django.core.management import BaseCommand, CommandParser
 from django.db.models.aggregates import Max
 from django.utils import timezone
 from lockmgr.lockmgr import LockMgr, renew_lock
-from privex.helpers import dec_round
+from privex.helpers import dec_round, empty
 
 from eoshistory.connections import get_celery_message_count
 # from eoshistory.settings import
@@ -153,6 +153,7 @@ class Command(BaseCommand):
         # if options['start_block'] is None:
         #
         Command.queue = options.pop('queue', settings.DEFAULT_CELERY_QUEUE)
+        Command.queue = settings.DEFAULT_CELERY_QUEUE if empty(Command.queue) else Command.queue
         Command.lock_sync_blocks = f'eoshist_sync:{Command.queue}:{getpass.getuser()}'
         Command.lock_fill_gaps = f'eoshist_gaps:{Command.queue}:{getpass.getuser()}'
         log.info(' >>> Using Celery queue "%s"', Command.queue)

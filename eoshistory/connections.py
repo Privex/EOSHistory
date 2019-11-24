@@ -3,6 +3,7 @@ from typing import Tuple
 import pika
 from django.conf import settings
 from pika.adapters.blocking_connection import BlockingChannel
+from privex.helpers import empty
 
 
 def get_rmq(**kwargs) -> Tuple[BlockingChannel, pika.BlockingConnection]:
@@ -29,6 +30,7 @@ def get_rmq_queue(queue=settings.RMQ_QUEUE, **kwargs) -> Tuple[BlockingChannel, 
 
 
 def get_celery_message_count(queue=settings.DEFAULT_CELERY_QUEUE, **kwargs):
+    queue = settings.DEFAULT_CELERY_QUEUE if empty(queue) else queue
     channel, connection = get_rmq(**kwargs)
     q = channel.queue_declare(queue, durable=True)
     msg_count = int(q.method.message_count)
