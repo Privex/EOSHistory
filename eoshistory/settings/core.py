@@ -86,8 +86,7 @@ REST_FRAMEWORK = {
 DEFAULT_CELERY_QUEUE = env('DEFAULT_CELERY_QUEUE', 'eoshist')
 
 EOS_NODE = env_csv('EOS_NODE', [
-    'https://eos.greymass.com', 'https://api.eosnewyork.io', 'https://api.eosdetroit.io',
-    'http://api1.eosdublin.io',
+    'https://eos.greymass.com', 'https://api.eosdetroit.io',
 ])
 
 EOS_START_TYPE = env('EOS_START_TYPE', 'relative')

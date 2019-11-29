@@ -17,6 +17,8 @@ Celery tasks for running in the background
     +===================================================+
 
 """
+import asyncio
+
 from celery.app.task import Context, Task
 from celery.utils.log import get_task_logger
 from django.db import transaction
@@ -52,6 +54,20 @@ class TaskBase(Task):
         _l.handlers.clear()
 
 
+async def import_tx_actions(tx, db_block):
+    await loader.import_transaction(db_block, tx)
+    await loader.import_actions(tx)
+
+
+async def import_block_transactions(raw_block: eos.EOSBlock, db_block: EOSBlock):
+    coros = []
+
+    for tx in raw_block.transactions:
+        coros += [import_tx_actions(tx, db_block)]
+    
+    await asyncio.gather(*coros, return_exceptions=True)
+
+
 @app.task(base=TaskBase, autoretry_for=(Exception,), retry_kwargs={'max_retries': 5, 'countdown': 2})
 def import_block(block: int) -> dict:
     with LockMgr(f'eoshist_impblock:{block}'):
@@ -65,34 +81,36 @@ def import_block(block: int) -> dict:
             raw_block: eos.EOSBlock
             db_block: EOSBlock
             
-            total_txs = 0
-            for tx in raw_block.transactions:   # type: eos.EOSTransaction
-                if total_txs % 10 == 0 or total_txs == 0 or total_txs == len(raw_block.transactions)-1:
-                    log.debug('Importing transaction %d out of %d', total_txs+1, len(raw_block.transactions))
-                try:
-                
-                    # Import the current TX into the DB
-                    run_sync(loader.import_transaction, block=db_block, tx=tx)
-            
-                    if total_txs % 10 == 0 or total_txs == 0 or total_txs == len(raw_block.transactions)-1:
-                        log.debug('Importing actions contained in transaction %d', total_txs+1)
-                    with transaction.atomic():
-                        # Import the all actions contained in this TX
-                        run_sync(loader.import_actions, tx)
-                except InvalidTransaction as e:
-                    log.debug("Skipping transaction %d out of %d on block %d due to InvalidTransaction: %s",
-                              total_txs+1, len(raw_block.transactions), block, str(e))
-                except (IntegrityError, errors.UniqueViolation) as e:
-                    if 'duplicate key value' in str(e):
-                        log.warning('WARNING: (Block Import: %d) Transaction ID "%s" already exists... '
-                                    'Exception: %s %s', block, tx.id, type(e), str(e))
-                    else:
-                        log.error('An unknown IntegrityError/UniqueViolation occurred while importing TX %s - '
-                                  'Exception: %s %s', tx.id, type(e), str(e))
-                except (Exception, BaseException) as e:
-                    log.error('An unknown exception occurred while importing TX %s - Skipping TX. - '
-                              'Exception: %s %s', tx.id, type(e), str(e))
-                total_txs += 1
+            total_txs = len(raw_block.transactions)
+            run_sync(import_block_transactions, raw_block, db_block)
+            # total_txs = 0
+            # for tx in raw_block.transactions:   # type: eos.EOSTransaction
+            #     if total_txs % 10 == 0 or total_txs == 0 or total_txs == len(raw_block.transactions)-1:
+            #         log.debug('Importing transaction %d out of %d', total_txs+1, len(raw_block.transactions))
+            #     try:
+            #
+            #         # Import the current TX into the DB
+            #         run_sync(loader.import_transaction, block=db_block, tx=tx)
+            #
+            #         if total_txs % 10 == 0 or total_txs == 0 or total_txs == len(raw_block.transactions)-1:
+            #             log.debug('Importing actions contained in transaction %d', total_txs+1)
+            #         with transaction.atomic():
+            #             # Import the all actions contained in this TX
+            #             run_sync(loader.import_actions, tx)
+            #     except InvalidTransaction as e:
+            #         log.debug("Skipping transaction %d out of %d on block %d due to InvalidTransaction: %s",
+            #                   total_txs+1, len(raw_block.transactions), block, str(e))
+            #     except (IntegrityError, errors.UniqueViolation) as e:
+            #         if 'duplicate key value' in str(e):
+            #             log.warning('WARNING: (Block Import: %d) Transaction ID "%s" already exists... '
+            #                         'Exception: %s %s', block, tx.id, type(e), str(e))
+            #         else:
+            #             log.error('An unknown IntegrityError/UniqueViolation occurred while importing TX %s - '
+            #                       'Exception: %s %s', tx.id, type(e), str(e))
+            #     except (Exception, BaseException) as e:
+            #         log.error('An unknown exception occurred while importing TX %s - Skipping TX. - '
+            #                   'Exception: %s %s', tx.id, type(e), str(e))
+            #     total_txs += 1
             
         return dict(block_num=db_block.number, timestamp=str(db_block.timestamp), txs_imported=total_txs)
 
