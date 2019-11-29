@@ -70,13 +70,14 @@ def import_block(block: int) -> dict:
                 if total_txs % 10 == 0 or total_txs == 0 or total_txs == len(raw_block.transactions)-1:
                     log.debug('Importing transaction %d out of %d', total_txs+1, len(raw_block.transactions))
                 try:
-                    # Import the current TX into the DB
-                    run_sync(loader.import_transaction, block=db_block, tx=tx)
-            
-                    if total_txs % 10 == 0 or total_txs == 0 or total_txs == len(raw_block.transactions)-1:
-                        log.debug('Importing actions contained in transaction %d', total_txs+1)
-                    # Import the all actions contained in this TX
-                    run_sync(loader.import_actions, tx)
+                    with transaction.atomic():
+                        # Import the current TX into the DB
+                        run_sync(loader.import_transaction, block=db_block, tx=tx)
+                
+                        if total_txs % 10 == 0 or total_txs == 0 or total_txs == len(raw_block.transactions)-1:
+                            log.debug('Importing actions contained in transaction %d', total_txs+1)
+                        # Import the all actions contained in this TX
+                        run_sync(loader.import_actions, tx)
                 except InvalidTransaction as e:
                     log.debug("Skipping transaction %d out of %d on block %d due to InvalidTransaction: %s",
                                 total_txs+1, len(raw_block.transactions), block, str(e))
