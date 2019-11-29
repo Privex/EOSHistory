@@ -87,7 +87,7 @@ def import_block(block: int) -> dict:
                     else:
                         log.error('An unknown IntegrityError/UniqueViolation occurred while importing TX %s - '
                                   'Exception: %s %s', tx.id, type(e), str(e))
-                except (Exception, BaseException):
+                except (Exception, BaseException) as e:
                     log.error('An unknown exception occurred while importing TX %s - Skipping TX. - '
                               'Exception: %s %s', tx.id, type(e), str(e))
                 total_txs += 1
