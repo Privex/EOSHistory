@@ -133,13 +133,13 @@ class EOSAction(models.Model):
     transaction = models.ForeignKey(EOSTransaction, on_delete=models.CASCADE, related_name='actions')
     action_index = models.IntegerField(default=0)
     
-    account = models.CharField(max_length=60, db_index=True)
+    account = models.CharField(max_length=150, db_index=True)
     name = models.CharField(max_length=255, db_index=True)
     authorization = JSONField(default=list)
     data = JSONField(default=None)
     
-    tx_from = models.CharField('TX Sender (from data)', max_length=60, null=True, blank=True, db_index=True)
-    tx_to = models.CharField('TX Recipient (from data)', max_length=60, null=True, blank=True, db_index=True)
+    tx_from = models.CharField('TX Sender (from data)', max_length=150, null=True, blank=True, db_index=True)
+    tx_to = models.CharField('TX Recipient (from data)', max_length=150, null=True, blank=True, db_index=True)
     tx_memo = models.TextField('TX Memo (from data)', max_length=1000, null=True, blank=True)
     tx_amount = models.DecimalField('Amount of tokens transacted (from data)', null=True, blank=True,
                                     max_digits=MAX_STORED_DIGITS, decimal_places=MAX_STORED_DP)
