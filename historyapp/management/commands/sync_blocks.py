@@ -51,10 +51,10 @@ UNION ALL (
               historyapp_eosblock
        ORDER BY
               number
-       DESC LIMIT 1
+       ASC LIMIT 1
 )
 ORDER BY
-       gap_start;
+       gap_start DESC;
 """
 
 
