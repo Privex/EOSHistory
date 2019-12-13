@@ -174,22 +174,27 @@ class Command(BaseCommand):
             spin_threads = 1 if spin_threads < 1 else spin_threads
             log.info(" >>> Launching %d import queue threads...", spin_threads)
             
-            while current_threads < spin_threads and current_block <= end_block:
-                _end = current_block + MAX_BLOCKS
-                _end = end_block if _end > end_block else _end
-                t = BlockQueue(current_block, _end, len(cls.queue_threads) + 1, queue=cls.queue)
-                t.start()
-                cls.queue_threads += [t]
-                current_threads += 1
-                current_block += MAX_BLOCKS
-                try:
-                    await asyncio.sleep(1)
-                    await cls.check_celery(renew=renew)
-                except (KeyboardInterrupt, CancelledError):
-                    await cls.clean_import_threads()
-                    return
-                except Exception:
-                    log.exception('ERROR - Something went wrong checking Celery queue length.')
+            while current_block <= end_block:
+                while current_threads < spin_threads:
+                    if current_block > end_block:
+                        break
+                    _end = current_block + MAX_BLOCKS
+                    _end = end_block if _end > end_block else _end
+                    t = BlockQueue(current_block, _end, len(cls.queue_threads) + 1, queue=cls.queue)
+                    t.start()
+                    cls.queue_threads += [t]
+                    current_threads += 1
+                    current_block += MAX_BLOCKS
+                    try:
+                        await asyncio.sleep(1)
+                        await cls.check_celery(renew=renew)
+                    except (KeyboardInterrupt, CancelledError):
+                        await cls.clean_import_threads()
+                        return
+                    except Exception:
+                        log.exception('ERROR - Something went wrong checking Celery queue length.')
+                await cls.clean_import_threads()
+            
         else:
             t = BlockQueue(start_block, end_block, len(cls.queue_threads) + 1, queue=cls.queue)
             t.start()
