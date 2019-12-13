@@ -195,7 +195,7 @@ class Command(BaseCommand):
                         log.exception('ERROR - Something went wrong checking Celery queue length.')
                 await cls.clean_import_threads()
                 await asyncio.sleep(1)
-                current_threads = []
+                current_threads = 0
         else:
             t = BlockQueue(start_block, end_block, len(cls.queue_threads) + 1, queue=cls.queue)
             t.start()
