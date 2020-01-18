@@ -130,7 +130,7 @@ class EOSAction(models.Model):
         """
         unique_together = (('transaction', 'action_index'),)
     
-    id = models.BigIntegerField(primary_key=True, null=False, blank=False)
+    id = models.BigAutoField(primary_key=True, null=False)
 
     transaction = models.ForeignKey(EOSTransaction, on_delete=models.CASCADE, related_name='actions')
     action_index = models.IntegerField(default=0)
